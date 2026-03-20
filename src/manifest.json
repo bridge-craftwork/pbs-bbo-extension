@@ -3,6 +3,12 @@
 	"name": "PBS with BBA Compare",
 	"description": "Practice Bidding Scenarios with BBA auction comparison for Bridge Base Online",
 	"version": "1.0.0",
+	"browser_specific_settings": {
+		"gecko": {
+			"id": "pbs-bba-compare@pbs-bbo-extension",
+			"strict_min_version": "109.0"
+		}
+	},
 	"icons": {
 		"16": "icons/pbs-bbo16.png",
 		"48": "icons/pbs-bbo48.png",
