@@ -40,6 +40,33 @@ body.state-off :is(.state-on, .state-unknown) {
     display: none;
 }
 
+h2 {
+    margin: 0;
+}
+
 button {
     font-size: 1em;
+}
+
+.instructions {
+    text-align: left;
+    max-width: 400px;
+    margin-top: var(--spacing);
+}
+
+.instructions h3 {
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.instructions ol {
+    padding-left: 20px;
+    line-height: 1.6;
+}
+
+.note {
+    font-size: 0.85em;
+    opacity: 0.7;
+    text-align: center;
+    margin-top: var(--spacing);
 }
