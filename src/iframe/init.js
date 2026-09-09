@@ -4,7 +4,7 @@ initGlobals();
 // Set default PBS data URL if not cached
 if (localStorage.getItem('PBSCache') == null) {
     localStorage.setItem('PBSCache',
-        'BBOalert\nImport,https://github.com/ADavidBailey/Practice-Bidding-Scenarios/blob/main/-PBS.txt');
+        'BBOalert\nImport,https://github.com/bridge-craftwork/Practice-Bidding-Scenarios/blob/main/-PBS.txt');
 }
 
 // Normalize BBOalertPlugin PBS config to include all expected fields.

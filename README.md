@@ -1,6 +1,6 @@
 # PBS for BBO - Browser Extension
 
-A lightweight browser extension for [Practice Bidding Scenarios](https://github.com/ADavidBailey/Practice-Bidding-Scenarios) on [Bridge Base Online](https://www.bridgebase.com). Supports Chrome and Safari on macOS.
+A lightweight browser extension for [Practice Bidding Scenarios](https://github.com/bridge-craftwork/Practice-Bidding-Scenarios) on [Bridge Base Online](https://www.bridgebase.com). Supports Chrome and Safari on macOS.
 
 Derived from [BBOalert](https://github.com/stanmaz/BBOalert) by Stanislaw Mazur, stripped down to only what PBS needs - no alerting system, no auto-alerts, just the script engine, shortcuts panel, and plugin support (BBA Compare, PBN Capture).
 
@@ -10,7 +10,7 @@ Derived from [BBOalert](https://github.com/stanmaz/BBOalert) by Stanislaw Mazur,
 
 1. **Download** this repository:
    - Click the green **Code** button above, then **Download ZIP**
-   - Or clone: `git clone https://github.com/Rick-Wilson/pbs-bbo-extension.git`
+   - Or clone: `git clone https://github.com/bridge-craftwork/pbs-bbo-extension.git`
 
 2. **Open** Chrome and go to `chrome://extensions/`
 
