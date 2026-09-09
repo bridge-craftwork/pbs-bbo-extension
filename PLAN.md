@@ -147,7 +147,7 @@ Note: `BBAcompare.js` and `PBNcapture.js` are NOT bundled as iframe scripts. The
 Default `alertOriginal` on first install:
 ```
 //BBOalert, PBS + BBA Compare
-Import,https://github.com/ADavidBailey/Practice-Bidding-Scenarios/blob/main/-PBS.txt
+Import,https://github.com/bridge-craftwork/Practice-Bidding-Scenarios/blob/main/-PBS.txt
 ```
 This URL is configurable via a PBS URL input field in the Data tab. Stored in localStorage. The Import chain recursively loads all PBS scenarios, JS files (setDealerCode.js, toggleRotate.js, PBNcapture.js, BBAcompare.js, PBStooltips.js), and Script blocks from `-PBS.txt`.
 

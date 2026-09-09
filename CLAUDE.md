@@ -4,17 +4,17 @@
 
 Chrome Manifest V3 extension that runs Practice Bidding Scenarios (PBS) on Bridge Base Online (BBO). Derived from BBOalert by stripping out alerting features and keeping only the script engine, shortcuts panel, options system, and plugin support.
 
-**Repo:** `Rick-Wilson/pbs-bbo-extension`
+**Repo:** `bridge-craftwork/pbs-bbo-extension`
 **Install:** Load `src/` as unpacked extension in Chrome developer mode
 
 ## Repositories
 
 | Repo | Purpose |
 |---|---|
-| `Rick-Wilson/pbs-bbo-extension` | This extension (derived from BBOalert) |
-| `Rick-Wilson/bbo-pbs` | Fork of BBOalert — hosts `Plugins/BBAcompare.js` |
+| `bridge-craftwork/pbs-bbo-extension` | This extension (derived from BBOalert) |
+| `bridge-craftwork/bbo-pbs` | Fork of BBOalert — hosts `Plugins/BBAcompare.js` |
 | `stanmaz/BBOalert` | Original BBOalert — hosts `Plugins/PBNcapture.js` and `Scripts/PBStooltips.js` |
-| `ADavidBailey/Practice-Bidding-Scenarios` | PBS data — `-PBS.txt` entry point, scenario files, `js/setDealerCode.js`, `js/toggleRotate.js` |
+| `bridge-craftwork/Practice-Bidding-Scenarios` | PBS data — `-PBS.txt` entry point, scenario files, `js/setDealerCode-polling.js`, `js/toggleRotate.js` |
 
 ## Runtime Data Loading
 
@@ -23,13 +23,13 @@ The extension doesn't bundle PBS data or plugins. Everything is fetched at runti
 ```
 PBSCache (localStorage) contains:
   BBOalert
-  Import,https://github.com/ADavidBailey/Practice-Bidding-Scenarios/blob/main/-PBS.txt
+  Import,https://github.com/bridge-craftwork/Practice-Bidding-Scenarios/blob/main/-PBS.txt
 
 -PBS.txt loads:
-  Import  → ADavidBailey/.../js/setDealerCode.js
-  Import  → ADavidBailey/.../js/toggleRotate.js
-  Javascript → stanmaz/BBOalert/.../Plugins/PBNcapture.js     (eval'd, registers events via addBBOalertEvent)
-  Javascript → Rick-Wilson/bbo-pbs/.../Plugins/BBAcompare.js  (eval'd, registers events via addBBOalertEvent)
+  Import  → bridge-craftwork/.../js/setDealerCode-polling.js
+  Import  → bridge-craftwork/.../js/toggleRotate.js
+  Javascript → stanmaz/BBOalert/.../Plugins/PBNcapture.js          (eval'd, registers events via addBBOalertEvent)
+  Javascript → bridge-craftwork/bbo-pbs/.../Plugins/BBAcompare.js  (eval'd, registers events via addBBOalertEvent)
   Import  → stanmaz/BBOalert/.../Scripts/PBStooltips.js
   Script,onDataLoad blocks → PBS Dynamic Layout system (fetches button layout + scenario metadata)
   295 .pbs scenario files (fetched on button click, not at startup)

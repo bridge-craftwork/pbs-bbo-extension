@@ -37,4 +37,4 @@ The extension loads plugin scripts (BBA Compare, PBN Capture) from GitHub reposi
 ## Contact
 
 For questions about this privacy policy, open an issue at:
-https://github.com/Rick-Wilson/pbs-bbo-extension/issues
+https://github.com/bridge-craftwork/pbs-bbo-extension/issues
