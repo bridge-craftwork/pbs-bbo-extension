@@ -66,11 +66,65 @@ string hardcoded here would describe the wrong one for half the users. The data
 file declares `window.pbsVersionLabel` and `window.pbsClientVersion`, and code
 here reads those.
 
-Beware the raw CDN cache. `raw.githubusercontent.com` serves a stale copy for
-minutes after a push, so a test run right after a merge can exercise the *old*
-file and look like a failed fix. Cache-bust with a query string when checking by
-`curl`, and in the browser confirm what is loaded by reading the function back
-(`setDealerCode.toString()`) rather than trusting the URL.
+**Edit `main`. Never commit to `release` directly.** `release` is produced by
+promoting, and a hand edit there is a change beta never saw.
+
+### Promoting
+
+Everything on `main` that is ready:
+
+```sh
+git fetch origin
+git checkout -B promote origin/release
+git merge --no-edit origin/main
+git push origin promote:release
+```
+
+**Use a merge, not `git push origin main:release`.** That works exactly once.
+The moment a single file has been promoted on its own (below), `release` carries
+a commit `main` does not, the branches have diverged, and the direct push is
+rejected as non-fast-forward. Merging is always correct; the fast-forward only
+sometimes is.
+
+### Promoting one file
+
+When `main` carries two independent changes and only one has finished its beta
+soak, a whole-branch promotion ships both. Take just the file:
+
+```sh
+git checkout -B promote origin/release
+git checkout origin/main -- runtime/thatOneFile.js
+git commit -m "Promote runtime/thatOneFile.js to release"
+git push origin promote:release
+```
+
+Then prove the other change did *not* come along:
+
+```sh
+curl -sf "https://raw.githubusercontent.com/…/release/runtime/startTable.js?cb=$RANDOM" \
+  | grep -c navButton     # 0 = still beta-only, as intended
+```
+
+The best moment to move a file between paths is when its content is identical on
+both sides: the promotion then changes which URL serves it and nothing else. Do a
+path change and a code change together and a regression has two candidate causes.
+
+### After promoting, wait before testing
+
+`raw.githubusercontent.com` serves a stale copy for about five minutes
+(`max-age=300`), so a test run started right after a merge exercises the *old*
+file and the failure looks exactly like a broken fix. Poll the release URL until
+it shows the new content before you trust any test:
+
+```sh
+until curl -sf ".../release/runtime/startTable.js?cb=$RANDOM" | grep -q navButton
+do sleep 25; done
+```
+
+In the browser, confirm what is loaded by reading the function back
+(`setDealerCode.toString()`), or by watching for a log line only the new code can
+print. Reading a published commit is not evidence: this has produced a wrong
+diagnosis twice, the second time after it had already been written down here.
 
 ## Migration status
 
