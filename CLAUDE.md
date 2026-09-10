@@ -94,7 +94,11 @@ It is not packaged: nothing there is in `src/`, and nothing there goes through
 store review. A BBO UI change can therefore be fixed by pushing to this repo,
 where the same code in `src/` would need a Chrome/Firefox/App Store release.
 
-Both `-PBS.txt` and `-PBS-beta.txt` import it, from different branches. Each file
+Both `-PBS.txt` and `-PBS-beta.txt` import it, from different branches -
+`release` and `main` respectively. Edit `main`; `release` is produced by
+promoting, which is a **merge**, never `push main:release` (the branches diverge
+the first time a single file is promoted on its own). The promotion procedure and
+its traps are in [runtime/README.md](runtime/README.md). Each file
 carries its own `//Script,<event>` … `//Script` markers, so it behaves exactly
 like a block written inline in the data file. See `runtime/README.md`.
 
