@@ -71,6 +71,9 @@
     // alongside BBAcompare's, giving that iframe two live observers, duplicate
     // per-mutation work, and defeating the optimisation it installed.
     var weDisconnected = false;
+    // Only log transitions - apply() runs on a 2s tick, and logging every
+    // pass buries anything useful in the console.
+    var lastLogged = null;
 
     function otherHostPresent() {
         try {
@@ -103,11 +106,13 @@
             } else if (!weDisconnected) {
                 BBOobserver.disconnect();
                 weDisconnected = true;
-            } else {
-                return;   // already standing by, nothing to say
             }
-            console.log('[PBS watcher] ' + myHost + ' -> ' + (active ? 'ACTIVE' : 'standby') +
-                        (why ? ' (' + why + ')' : ''));
+            var stateNow = active ? 'ACTIVE' : 'standby';
+            if (stateNow !== lastLogged) {
+                lastLogged = stateNow;
+                console.log('[PBS watcher] ' + myHost + ' -> ' + stateNow +
+                            (why ? ' (' + why + ')' : ''));
+            }
         } catch (e) {
             console.warn('[PBS watcher] could not switch observer: ' + ((e && e.message) || e));
         }
