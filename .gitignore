@@ -9,3 +9,10 @@ dist/
 xcuserdata/
 DerivedData/
 build/
+
+# Playwright test artifacts. These are console/network dumps from live BBO
+# sessions against a real account - they can pick up a username, a session id or
+# whatever the page happened to be showing. This repo is PUBLIC and must stay
+# public (runtime/ is fetched from its raw URLs), so nothing from a live session
+# may be committable by accident.
+.playwright-mcp/
