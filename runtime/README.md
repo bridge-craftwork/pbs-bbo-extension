@@ -54,9 +54,15 @@ file and look like a failed fix. Cache-bust with a query string when checking by
 
 ## Migration status
 
-`-PBS.txt` (release) and `-PBS-beta.txt` (beta) are both thin import lists
-carrying no JavaScript of their own. `-PBS-toggle.txt` has a PR open to do the
-same; until it merges, that file is still a stale v4.1.8 copy of release.
+Two data files remain, `-PBS.txt` (release) and `-PBS-beta.txt` (beta), and both
+are thin import lists carrying no JavaScript of their own.
+
+`-PBS-toggle.txt` is gone. Making it thin was not enough: it still had content of
+its own, so it stayed a third thing to remember, and the very next fix had to be
+hand-copied into it. Deleting was safe because it had never been the extension's
+seeded default - it was a test file, reachable only by setting `PBSCache` by
+hand. Do not read that as a precedent for the other two, which were handed out
+and must keep resolving forever.
 
 `Practice-Bidding-Scenarios/js/` still holds the pre-split originals
 (`setDealerCode-polling.js`, `toggleRotate.js`, `setDealerCode.js`). Nothing
