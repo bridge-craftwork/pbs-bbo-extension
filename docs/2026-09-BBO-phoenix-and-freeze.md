@@ -205,12 +205,94 @@ serves the folder list via `ard.php`, *is* cross-origin and refuses direct fetch
 Still unknown: selecting an uploaded folder as a table's deal source, and getting
 the folder id programmatically.
 
-## Open items
+## Shipped to release, 2026-09-10
 
-- `setDealerCode` 5s fix — PR #9, unmerged
-- Phoenix Start fix for **release** — Practice-Bidding-Scenarios PR #303, unmerged
-- Release still has none of this; beta carries it all, by choice
-- `activeWatcher` only works if **both** data files import it, so it needs to
-  reach release before the both-installed case is fixed for real
+All of the above reached release that day. The order mattered, and one thing
+found on the way changes how the beta channel should be read.
+
+**The beta split had quietly stopped shipping two of its own fixes.**
+`-PBS-beta.txt` was rewritten to import `runtime/`, but two lines were left
+pointing at the pre-split originals in `Practice-Bidding-Scenarios/js/`. Both
+files had been copied to `runtime/` *and then fixed there*, so beta went on
+loading the unfixed copies and the fixed ones were imported by nothing.
+Measured on the live raw URLs beta actually fetched: the 5s dead wait still
+present, `pbsGetRotatePref` absent. Beta was in fact *behind*
+`beta/phoenix-plus-sticky-rotate`, which had imported those two from its own
+branch. Merging PR #9 would have changed nothing for anyone.
+
+The lesson is the section-2 lesson again in a different costume: **verify what
+is loaded, not what is published.** The check that settles it is reading the
+function back out of the iframe — `setDealerCode.toString()` — rather than
+trusting the URL or the commit.
+
+- **PR #9** merged, then actually wired up: beta and release both import
+  `runtime/setDealerCode-polling.js`. `setDealerCode DONE in 551ms`, confirmed
+  on both channels with `deadWaitPresent: false` read from the live function.
+- **PBS #303** merged to release, then superseded hours later by the split —
+  `runtime/startTable.js` is a superset, adding the `:visible` guard and the
+  seating fix that #303 did not carry.
+- **`-PBS.txt` split, 1135 → 80 lines.** Verified block by block against the
+  file it replaced: four of six inline blocks byte-identical to their
+  `runtime/` counterpart, one differing only by the deferGuard early-out, and
+  the 836-line layout builder differing in exactly two substantive hunks
+  (auto-start, and the version now coming from the data file).
+- **`activeWatcher.js` is in release**, so the both-extensions-installed freeze
+  is closed whenever both extensions load a data file that imports it — but see
+  below, because that condition is narrower than it looks.
+- **Channel identity moved into the data file.** Nothing in `runtime/` may name
+  a channel now that both channels load the same files; release was otherwise
+  about to report itself as `1.9.26-beta` on every scenario click.
+
+## The freeze is not closed for an unconfigured BBOalert
+
+Measured on the day of the release split, and worth stating plainly because the
+earlier write-up is easy to read as more optimistic than the facts support.
+
+`activeWatcher.js` lives in the **data file**. An extension instance that loads
+no data file therefore has no watcher registration and cannot be serialised. A
+freshly installed BBOalert is exactly that: its `BBOalertCache` seeds to the
+empty string `"BBOalert\n"`, so it imports nothing at all — while still building
+its iframe and still running its own `BBOobserver` over the same BBO page.
+
+Three runs, one variable changed each time:
+
+| PBS data file | BBOalert data file | result |
+|---|---|---|
+| release, post-split | the same file — activeWatcher on both sides | `setDealerCode DONE in 553ms`, page alive |
+| release, post-split | empty (its own default) | **hang, watchdog fired** |
+| release, **pre-split** (control) | empty (its own default) | **hang, watchdog fired** |
+
+The control matters: the pre-split file hangs in exactly the same way, so the
+split introduced nothing. This is the original freeze, still reachable, in the
+configuration the fix cannot cover.
+
+PBS cannot fix this from its own side. `BBOobserver` is a `const` lexical
+binding, reachable only from code `eval`'d inside that iframe, which is the very
+reason the fix has to live in a data file rather than in `src/`. Serialising an
+instance that loads no data file would need the registration to ship inside
+BBOalert's own extension, or BBOalert's default data file to import
+`activeWatcher.js`. Both are changes in somebody else's repo.
+
+Until then, the honest statement is: **PBS + BBOalert is safe when both are
+pointed at a data file carrying `activeWatcher.js`, and still freezes when
+BBOalert is installed but unconfigured.**
+
+## Still open
+
+- `-PBS-toggle.txt` — PR open to point it at the release runtime. Not deleted:
+  a `PBSCache` is seeded once and persists, so the URL must keep resolving. It
+  will report `1.9.26-toggle`, which turns "is anyone still on it?" into a
+  question the telemetry answers.
 - Moving `BBAcompare.js` into this repo, and its `isSettingON(5/6/8)` indices,
   which are BBOalert setting numbers that mean nothing under PBS
+- `Practice-Bidding-Scenarios/js/` is now frozen dead code kept only so old
+  cached URLs resolve. It is a live trap — see above — and a fix applied there
+  reaches nobody.
+- Getting `activeWatcher.js` in front of an **unconfigured BBOalert**, which is
+  the one freeze case release still cannot reach (see the section above). Needs
+  a change in BBOalert's extension or its default data file.
+- The shipped extension seeds `ADavidBailey/Practice-Bidding-Scenarios`, which
+  still resolves only because GitHub redirects the repo's former name to
+  `bridge-craftwork`. That redirect is now load-bearing for every existing
+  install: renaming the repo again, or creating a new repo under the old name,
+  would break them.
