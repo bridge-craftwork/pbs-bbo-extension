@@ -184,12 +184,22 @@ window.startTable = function(type, opts) {
             return $(this).text().trim() === want;
         });
         if (byText.length) return byText.first();
-        // "Sit" and "Robot" are translated too, so the structural fallback below
-        // is the path every non-English user takes, not a rare safety net.
-        if (want === "Robot") {
-            if (items.length === 1) return items.first();
-            if (items.length === 3) return items.eq(1);
-        }
+        // "Sit" and "Robot" are translated too, so this structural fallback is the
+        // path every non-English user takes, not a rare safety net. It has to
+        // cover EVERY count the menu can show, and the earlier version missed the
+        // commonest one:
+        //
+        //   3 visible  [Sit, Robot, Reserve]   own seat, nobody seated yet
+        //   2 visible  [Robot, Reserve]        another empty seat once you are in
+        //   1 visible  [Robot]                 last empty seat
+        //
+        // Robot is the LAST-BUT-ONE item whenever Reserve is present, and the only
+        // item when it is not - which reduces to index 1 of three, index 0
+        // otherwise. Handling only 1 and 3 left the two-item case throwing
+        // "no 'Robot' option", and Chinese hit it immediately: [机器人, 保留].
+        // Turkish did not, because Turkish leaves "Robot" untranslated - which is
+        // exactly why one non-English language is not a test of language support.
+        if (want === "Robot") return items.eq(items.length === 3 ? 1 : 0);
         if (want === "Sit" && items.length === 3) return items.eq(0);
         console.warn("[PBS] seat menu: no '" + want + "' among [" +
             items.map(function () { return $(this).text().trim(); }).get().join(", ") + "]");
