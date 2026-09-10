@@ -279,10 +279,12 @@ BBOalert is installed but unconfigured.**
 
 ## Still open
 
-- `-PBS-toggle.txt` — PR open to point it at the release runtime. Not deleted:
-  a `PBSCache` is seeded once and persists, so the URL must keep resolving. It
-  will report `1.9.26-toggle`, which turns "is anyone still on it?" into a
-  question the telemetry answers.
+- ~~`-PBS-toggle.txt`~~ — **deleted.** Pointing it at the release runtime was
+  the first move, and it was not enough: a thin file still has content, so it
+  stayed a third thing to remember, and the next fix after that had to be
+  hand-copied into it. Safe to delete because it had never been the seeded
+  default - added as a test file in Feb 2026 and reachable only by setting
+  `PBSCache` by hand. The other two were handed out and must keep resolving.
 - Moving `BBAcompare.js` into this repo, and its `isSettingON(5/6/8)` indices,
   which are BBOalert setting numbers that mean nothing under PBS
 - `Practice-Bidding-Scenarios/js/` is now frozen dead code kept only so old
