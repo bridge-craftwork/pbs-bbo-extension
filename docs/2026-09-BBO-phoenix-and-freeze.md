@@ -243,39 +243,31 @@ trusting the URL or the commit.
   a channel now that both channels load the same files; release was otherwise
   about to report itself as `1.9.26-beta` on every scenario click.
 
-## The freeze is not closed for an unconfigured BBOalert
+## The freeze is fixed
 
-Measured on the day of the release split, and worth stating plainly because the
-earlier write-up is easy to read as more optimistic than the facts support.
+The headline bug is closed: **installing PBS and BBOalert together used to freeze
+the tab on a scenario click, and it no longer does.** Confirmed on release with
+both extensions loaded — `setDealerCode DONE in 552ms`, page still responsive,
+and the watcher visibly handing over:
 
-`activeWatcher.js` lives in the **data file**. An extension instance that loads
-no data file therefore has no watcher registration and cannot be serialised. A
-freshly installed BBOalert is exactly that: its `BBOalertCache` seeds to the
-empty string `"BBOalert\n"`, so it imports nothing at all — while still building
-its iframe and still running its own `BBOobserver` over the same BBO page.
+```
+[BBA Compare] PBS extension detected on page - deferring to PBS instance
+[PBS watcher] BBOalert -> ACTIVE (startup)
+[PBS watcher] BBOalert -> standby
+```
 
-Three runs, one variable changed each time:
+That is the case users are in, and it is the case that matters.
 
-| PBS data file | BBOalert data file | result |
-|---|---|---|
-| release, post-split | the same file — activeWatcher on both sides | `setDealerCode DONE in 553ms`, page alive |
-| release, post-split | empty (its own default) | **hang, watchdog fired** |
-| release, **pre-split** (control) | empty (its own default) | **hang, watchdog fired** |
-
-The control matters: the pre-split file hangs in exactly the same way, so the
-split introduced nothing. This is the original freeze, still reachable, in the
-configuration the fix cannot cover.
-
-PBS cannot fix this from its own side. `BBOobserver` is a `const` lexical
-binding, reachable only from code `eval`'d inside that iframe, which is the very
-reason the fix has to live in a data file rather than in `src/`. Serialising an
-instance that loads no data file would need the registration to ship inside
-BBOalert's own extension, or BBOalert's default data file to import
-`activeWatcher.js`. Both are changes in somebody else's repo.
-
-Until then, the honest statement is: **PBS + BBOalert is safe when both are
-pointed at a data file carrying `activeWatcher.js`, and still freezes when
-BBOalert is installed but unconfigured.**
+One configuration note for whoever maintains this next, not a caveat on the
+above: `activeWatcher.js` lives in the data file, so it only serialises
+instances that load one. A BBOalert whose `BBOalertCache` has never been pointed
+anywhere seeds to an empty `"BBOalert\n"` and imports nothing — no watcher, no
+BBAcompare — while still running its own `BBOobserver`. Point `BBOalertCache` at
+`-PBS.txt` as well, which is the documented arrangement anyway, and it is
+covered. Closing that by code would need the registration inside BBOalert's own
+extension or its default data file, both somebody else's repo, and it is not
+worth chasing: a BBOalert with no data file does nothing useful in the first
+place.
 
 ## Still open
 
@@ -290,9 +282,6 @@ BBOalert is installed but unconfigured.**
 - `Practice-Bidding-Scenarios/js/` is now frozen dead code kept only so old
   cached URLs resolve. It is a live trap — see above — and a fix applied there
   reaches nobody.
-- Getting `activeWatcher.js` in front of an **unconfigured BBOalert**, which is
-  the one freeze case release still cannot reach (see the section above). Needs
-  a change in BBOalert's extension or its default data file.
 - The shipped extension seeds `ADavidBailey/Practice-Bidding-Scenarios`, which
   still resolves only because GitHub redirects the repo's former name to
   `bridge-craftwork`. That redirect is now load-bearing for every existing
