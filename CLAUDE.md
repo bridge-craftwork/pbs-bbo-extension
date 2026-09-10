@@ -87,6 +87,31 @@ The `BBOalertPlugin ` prefix (with trailing space before label) matches BBOalert
 - `webStorage.js` — `fetchWebData()`, `makeDirectLink()`, `HTMLpage2text()`, `loadJS()`
 - `init.js` — Initialization: `initGlobals()`, default PBSCache URL, config normalization
 
+## runtime/ — JavaScript fetched at run time
+
+`runtime/` holds JavaScript that the extension **fetches from GitHub at run time**.
+It is not packaged: nothing there is in `src/`, and nothing there goes through
+store review. A BBO UI change can therefore be fixed by pushing to this repo,
+where the same code in `src/` would need a Chrome/Firefox/App Store release.
+
+`-PBS-beta.txt` imports it (release still has its blocks inline). Each file
+carries its own `//Script,<event>` … `//Script` markers, so it behaves exactly
+like a block written inline in the data file. See `runtime/README.md`.
+
+The repo **must stay public** — raw URLs for a private repo need a token.
+
+## Two extensions on one page
+
+PBS and BBOalert can both be installed, and both load the same `-PBS.txt` data.
+They are fully independent (separate iframes, separate JS contexts) but drive the
+**same BBO page**, which caused a reproducible tab freeze — see
+[docs/2026-09-BBO-phoenix-and-freeze.md](docs/2026-09-BBO-phoenix-and-freeze.md).
+`runtime/activeWatcher.js` serialises the watching without disabling either.
+
+Note `BBOobserver` is a `const` lexical binding, so it is reachable only from code
+running inside that iframe — which data-file blocks are, since they are `eval`'d
+there.
+
 ## Important Patterns
 
 ### processTable() Pipeline
@@ -134,3 +159,5 @@ Config change detection runs in a `Script,onAnyMutation` block, reading from `lo
 
 - **Iframe destruction on navDiv flicker**: BBO's navDiv briefly hides during normal operation, causing `main.js` to destroy and recreate the iframe. Shows as "BBA Compare: Iframe window unload" in console. Doesn't cause functional problems but wastes resources.
 - **BBOalertPlugin prefix**: Can't rename to `PBSPlugin` until `-PBS.txt` is updated (lines 1018, 1090 hardcode `BBOalertPlugin PBS`). Tracked as coordinated change with PBS repo.
+- **BBO's Phoenix UI**: BBO is mid-migration to a new UI (`bbo-phx-*`, `bbo-create-table-modal`). Selectors written against the old markup fail silently, because jQuery `.click()` on an empty set throws nothing. Prefer stable ids and `:visible` over positional `.eq(n)` — BBO now renders some labels on two surfaces at once.
+- **Both extensions installed**: fixed by `runtime/activeWatcher.js`, but only when *both* data files import it. Until release carries it too, a user with PBS + BBOalert can still hit the freeze.
