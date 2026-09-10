@@ -4,6 +4,27 @@ window.startTable = function(type, opts) {
     var requireHome = opts.requireHome !== false;
     var t0 = Date.now();
     var startBtnText = (type === 'teaching') ? 'Start a teaching table' : 'Start a bidding table';
+
+    // BBO translates every navigation label, so matching on English text finds
+    // nothing for a user whose interface language is not English: the chain stops
+    // silently and they are back to pressing Start by hand. Reported on Facebook
+    // by a Chinese-language user and reproduced by switching the setting.
+    //
+    // Measured on a live page, the parts that do NOT translate:
+    //
+    //   Practice (main nav)     phoenix-regular-navigation-button, path M18.666 12.6664
+    //   Start a bidding table   phoenix-large-navigation-button #0, path M12.7237 1.32617
+    //   Start a teaching table  phoenix-large-navigation-button #1, path M21 3H3V17H21V3Z
+    //
+    // The host component tag is the useful scope: the main nav is built from
+    // phoenix-regular-navigation-button, and exactly TWO
+    // phoenix-large-navigation-button elements are visible on the practice
+    // screen - these two, in this order. About / Bridge Master / Minibridge are
+    // other components and do not appear in that scope.
+    var NAV_REGULAR = 'phoenix-regular-navigation-button';
+    var NAV_LARGE = 'phoenix-large-navigation-button';
+    var startBtnIcon = (type === 'teaching') ? 'M21 3H3V17H21V3Z' : 'M12.7237 1.32617';
+    var startBtnIndex = (type === 'teaching') ? 1 : 0;
     function delay(duration) {
         return new Promise((resolve) => { setTimeout(resolve, duration); });
     }
@@ -42,6 +63,33 @@ window.startTable = function(type, opts) {
         "permission-required-to-play": true,
         "invisible-table": true
     };
+
+    // Find a BBO navigation button without depending on the interface language.
+    // Tried in order, most trustworthy first:
+    //   1. the English label - correct for English users, and identical to what
+    //      this code did before, so that case carries no new risk
+    //   2. the icon's SVG path - BBO ships the same geometry in every language
+    //   3. position within its own component type - last resort, and it says so
+    //      in the console, because a silent wrong click is worse than a loud one
+    function navButton(hostTag, label, iconPrefix, index) {
+        var btns = $(hostTag + ':visible button.bbo-phx-navigation:visible', BBOcontext());
+
+        var byText = btns.filter(function () {
+            return (this.textContent || '').indexOf(label) >= 0;
+        });
+        if (byText.length) return byText.first();
+
+        var byIcon = btns.filter(function () {
+            var p = this.querySelector('svg path');
+            return !!p && (p.getAttribute('d') || '').indexOf(iconPrefix) === 0;
+        });
+        if (byIcon.length) return byIcon.first();
+
+        console.warn('[PBS] navButton: no match for "' + label + '" by label or icon'
+                     + ' - falling back to position ' + index + ' of ' + btns.length
+                     + ' in ' + hostTag + '. BBO may have changed its markup.');
+        return btns.eq(index);
+    }
 
     // Set each toggle TO a state rather than blind-toggling, so re-running is
     // idempotent and a changed BBO default cannot invert the intent. Clicking the
@@ -86,10 +134,44 @@ window.startTable = function(type, opts) {
         return $("bridge-screen .nameDisplayClass", BBOcontext());
     }
 
-    // An unoccupied seat still shows its direction ("West", "North - Sit!").
-    // Once filled it shows a player or robot name instead.
+    // An unoccupied seat shows its direction ("West", "North - Sit!"); once
+    // filled it shows a player or robot name instead.
+    //
+    // Matching /^(North|South|East|West)/ was an ENGLISH test, and it failed
+    // silently for everyone else. Measured in Turkish the seats read
+    // "Guney - Otur!", "Bati", "Kuzey - Otur!", "Dogu" - none match, so every
+    // seat looked already-filled, seatOne() returned immediately for all four,
+    // and startTable reported success on a table with nobody at it. The run
+    // even looked FASTER, because it had skipped the work.
+    //
+    // There is no id, class or attribute distinguishing an empty seat from a
+    // filled one - measured, they are both a bare div.nameDisplayClass - so the
+    // direction words have to come from the page. Every seat is empty at the
+    // moment a table is created, so the labels seen then ARE the four direction
+    // words in the user's language. Capture once, compare after.
+    //
+    // The suffix is stripped rather than matched: only the seats you may take
+    // carry " - Sit!", and it disappears once you sit, so an exact comparison
+    // would call a still-empty seat filled.
+    var emptyLabels = null;
+
+    function directionWord(txt) {
+        var i = txt.indexOf(" - ");
+        return (i >= 0 ? txt.slice(0, i) : txt).trim();
+    }
+
+    function captureEmptyLabels() {
+        emptyLabels = seatLabels().map(function () {
+            return directionWord($(this).text().trim());
+        }).get();
+        console.log("[PBS] seat directions for this language: " + JSON.stringify(emptyLabels));
+    }
+
     function seatIsEmpty(idx) {
         var txt = $(seatLabels()[idx]).text().trim();
+        if (emptyLabels && emptyLabels[idx]) return directionWord(txt) === emptyLabels[idx];
+        // Not captured yet (or the table pre-dates this run): fall back to the
+        // English words, which is what this always did.
         return /^(North|South|East|West)( - .*)?$/.test(txt);
     }
 
@@ -102,6 +184,8 @@ window.startTable = function(type, opts) {
             return $(this).text().trim() === want;
         });
         if (byText.length) return byText.first();
+        // "Sit" and "Robot" are translated too, so the structural fallback below
+        // is the path every non-English user takes, not a rare safety net.
         if (want === "Robot") {
             if (items.length === 1) return items.first();
             if (items.length === 3) return items.eq(1);
@@ -135,6 +219,7 @@ window.startTable = function(type, opts) {
     // the rest. Sequential on purpose - the seats interact, and BBO's menu for a
     // later seat depends on whether earlier ones are filled.
     function seatAll() {
+        captureEmptyLabels();
         return seatOne(0, "Sit")
             .then(() => seatOne(1, "Robot"))
             .then(() => seatOne(2, "Robot"))
@@ -167,9 +252,9 @@ window.startTable = function(type, opts) {
         // hidden main-nav copy comes FIRST in DOM order. Without :visible,
         // .first() resolves to a button that is not on screen and the click does
         // nothing. Measured live: 2 matches for the table labels, 5 for Practice.
-        .then(() => $("button.bbo-phx-navigation:contains('Practice'):visible", BBOcontext()).first().click())
-        .then(() => waitFor(() => $("button.bbo-phx-navigation:contains('" + startBtnText + "'):visible", BBOcontext()).length > 0))
-        .then(() => $("button.bbo-phx-navigation:contains('" + startBtnText + "'):visible", BBOcontext()).first().click())
+        .then(() => navButton(NAV_REGULAR, 'Practice', 'M18.666 12.6664', 4).click())
+        .then(() => waitFor(() => navButton(NAV_LARGE, startBtnText, startBtnIcon, startBtnIndex).length > 0))
+        .then(() => navButton(NAV_LARGE, startBtnText, startBtnIcon, startBtnIndex).click())
         .then(() => waitFor(() => $("bbo-create-table-modal", BBOcontext()).length > 0))
         .then(() => setTableOptions())
         .then(() => waitFor(() => $(START_TABLE_BUTTON, BBOcontext()).length > 0))
