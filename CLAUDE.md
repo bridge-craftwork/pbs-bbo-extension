@@ -155,6 +155,24 @@ Config change detection runs in a `Script,onAnyMutation` block, reading from `lo
 - File selector in Data tab
 - "BBOalert button" and "Deferred alerts" settings
 
+## Testing
+
+Tests drive a **live BBO account** — there is no test server. The harness is
+`test/playwright/pwrun.mjs` and the guide is
+[docs/testing-with-playwright.md](docs/testing-with-playwright.md).
+
+Three things from it that are easy to get wrong:
+
+- **Verify what is loaded, not what is published.** `raw.githubusercontent.com`
+  caches for ~5 minutes, so a run started just after a merge fetches the old file
+  and the failure looks like a broken fix. Read the function back
+  (`setDealerCode.toString()`), or watch for a log line only the new code prints.
+- **`localStorage` is the control panel.** `PBSCache` / `BBOalertCache` choose the
+  data file, `lang` sets the interface language without touching the account, and
+  `invisible` must stay `y` or every run notifies the account's friends.
+- **Assert the outcome, not the "DONE" line.** The non-English seating bug logged
+  `DONE` *faster* than a healthy run, because it had skipped the work.
+
 ## Known Issues
 
 - **Iframe destruction on navDiv flicker**: BBO's navDiv briefly hides during normal operation, causing `main.js` to destroy and recreate the iframe. Shows as "BBA Compare: Iframe window unload" in console. Doesn't cause functional problems but wastes resources.
