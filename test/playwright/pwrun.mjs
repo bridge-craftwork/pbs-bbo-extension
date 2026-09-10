@@ -19,6 +19,9 @@ const KEEP_OPEN = process.argv.includes('--keep-open');
 // --profile lets a run use a second, slim profile so it does not contend with
 // a browser already open on the main one.
 const PROFILE = arg('profile', '/Users/rick/.playwright-mcp/bbo-profile');
+// --expect-build <hash>  fail the run if the page loaded a different revision of
+// runtime/ than the one on disk. Get the hash from: node tools/stamp-runtime.mjs
+const EXPECT_BUILD = arg('expect-build');
 const EXT = '/Users/rick/.playwright-mcp/ext';
 // PBS, BBOalert, Bridge Solver, BBO Extractor
 const ALL = { pbs:      'bfgapanhaiakopfngbjiapbcgdgojoed',
@@ -157,11 +160,38 @@ try {
   });
 
   const mod = await import(pathToFileURL(TEST).href);
-  const result = await mod.default({ page, ctx, say });
+  // Which revision of runtime/ did the browser actually load? Published by
+  // runtime/buildStamp.js. Recorded on EVERY run, because "is this the code I
+  // just pushed?" was a judgement call three times in one day and wrong each
+  // time - raw.githubusercontent caches for ~5 minutes.
+  const runtimeBuild = async () => {
+    try {
+      return await page.evaluate(() => {
+        const f = document.getElementById('pbs-iframe');
+        const w = f && f.contentWindow;
+        return (w && w.pbsRuntimeBuild) ? w.pbsRuntimeBuild : null;
+      });
+    } catch { return null; }
+  };
+
+  const result = await mod.default({ page, ctx, say, runtimeBuild });
+  const build = await runtimeBuild();
+  let stale = false;
+  if (build) {
+    say('runtime build loaded: ' + build.combined);
+    if (EXPECT_BUILD && build.combined !== EXPECT_BUILD) {
+      say('STALE: expected build ' + EXPECT_BUILD + ' but the page loaded ' + build.combined);
+      stale = true;
+    }
+  } else if (EXPECT_BUILD) {
+    say('STALE CHECK FAILED: no window.pbsRuntimeBuild - does this data file import buildStamp.js?');
+    stale = true;
+  }
   say('test returned');
   clearTimeout(watchdog);
   if (!KEEP_OPEN) { try { await ctx.close(); } catch {} }
-  finish('ok', { result, dialogs });
+  finish(stale ? 'stale' : 'ok',
+         { result, dialogs, runtimeBuild: build, expectedBuild: EXPECT_BUILD || undefined });
 } catch (e) {
   say('ERROR: ' + (e?.message || e));
   clearTimeout(watchdog);

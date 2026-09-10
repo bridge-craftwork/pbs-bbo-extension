@@ -121,10 +121,22 @@ until curl -sf ".../release/runtime/startTable.js?cb=$RANDOM" | grep -q navButto
 do sleep 25; done
 ```
 
-In the browser, confirm what is loaded by reading the function back
-(`setDealerCode.toString()`), or by watching for a log line only the new code can
-print. Reading a published commit is not evidence: this has produced a wrong
-diagnosis twice, the second time after it had already been written down here.
+Better than either: **check the build stamp.** `runtime/buildStamp.js` publishes
+the content hash of every file in this folder into the page, so "did the browser
+load what I pushed?" is a comparison rather than a judgement:
+
+```sh
+node tools/stamp-runtime.mjs            # prints combined=<hash>, rewrites the stamp
+node test/playwright/pwrun.mjs --test ./mytest.mjs --expect-build <hash>
+```
+
+The run reports `status: "stale"` instead of passing against the wrong code.
+Regenerate the stamp whenever a `runtime/` file changes — `--check` fails if it
+is out of date, and a forgotten regeneration surfaces as the same mismatch.
+
+Reading a published commit is not evidence. That produced three wrong diagnoses
+in one day, twice after the trap had already been written down here, which is
+why it is now a tool rather than a warning.
 
 ## Migration status
 
