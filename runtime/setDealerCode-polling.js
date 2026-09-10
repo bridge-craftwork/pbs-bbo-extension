@@ -70,9 +70,26 @@ window.setDealerCode = function (dealerCode, dealer = "S", rotateDeals = true) {
                 });
             }
         },
-        // step 4: wait for dealer dropdown to close, then check Randomly checkbox
+        // step 4: check the "Randomly rotate" checkbox.
+        //
+        // This used to wait for the dealer dropdown to close first
+        // (ready: mat-option.length === 0). That wait could never succeed: the
+        // dealer select is a MULTI-select - every option carries a
+        // mat-pseudo-checkbox - so it deliberately stays open after an option is
+        // clicked. The step therefore burned its full 5s cap on EVERY scenario
+        // click, which is the long pause with the dialog sitting on screen.
+        //
+        // Measured on a live table, looking for a way to close just the dropdown:
+        //   click an option           -> 4 options remain, dialog open
+        //   click the select again    -> 4 options remain, dialog open
+        //   Escape at the mat-select  -> 0 options, but the DIALOG CLOSES TOO,
+        //                                taking the textarea with it (step 7 then
+        //                                stalls instead - same 5s, moved)
+        // There is no way to collapse only the dropdown, so do not try. The wait
+        // is unnecessary anyway: the checkbox below is clicked by dispatching an
+        // event AT the element, so an overlay sitting on top of it is irrelevant.
         {
-            ready: () => $("mat-option", doc).length === 0,
+            ready: () => true,
             action: () => {
                 if (($("modal-content mat-checkbox:first", doc).hasClass("mat-checkbox-checked")) != window.pbsRotateDeals) {
                     $("modal-content mat-checkbox:first .mat-checkbox-input", doc).trigger("click");
