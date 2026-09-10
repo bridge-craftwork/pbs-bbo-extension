@@ -811,6 +811,11 @@
     }
 
     function runInit() {
+        if (window.pbsShouldDefer && window.pbsShouldDefer()) {
+            console.log('PBS: deferring to the PBS extension instance - skipping layout build under BBOalert.');
+            window._pbsDynamicBuilding = false;
+            return;
+        }
         console.log('PBS v4.1.11-beta-autostart: Initializing...');
         console.log('PBS Dynamic: Test mode =', pbsConfig.Enable_Test_Mode);
         console.log('PBS Dynamic: Beta layout =', pbsConfig.Use_Beta_Layout);

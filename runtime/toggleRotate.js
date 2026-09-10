@@ -1,4 +1,31 @@
 //Script,onDataLoad
+// The rotate state is a USER preference, not a per-scenario one. All 347 scenario
+// files call setDealerCode(code, dealer, true) - the third argument is a constant
+// across every scenario, so it expresses no per-scenario intent. Without this,
+// the user's choice was lost on every page reload AND on every scenario click.
+// A stored preference therefore wins over the scenario's constant; when nothing
+// has been stored yet, the scenario's value still applies.
+var PBS_ROTATE_KEY = 'pbsRotateDeals';
+
+// localStorage can throw outright (Safari private browsing, blocked site data),
+// so every access is guarded and falls back to "no preference stored".
+window.pbsGetRotatePref = function () {
+    try {
+        var v = localStorage.getItem(PBS_ROTATE_KEY);
+        return v === null ? null : v === 'true';
+    } catch (e) {
+        return null;
+    }
+};
+
+window.pbsSetRotatePref = function (on) {
+    try {
+        localStorage.setItem(PBS_ROTATE_KEY, on ? 'true' : 'false');
+    } catch (e) {
+        // Preference simply will not persist; the in-session toggle still works.
+    }
+};
+
 window.updateRotateButton = function () {
     var singleArrows = { N: '\u2191', E: '\u2192', S: '\u2193', W: '\u2190' };
     var doubleArrows = { N: '\u2195', E: '\u2194', S: '\u2195', W: '\u2194' };
@@ -19,6 +46,7 @@ window.updateRotateButton = function () {
 window.toggleRandomlyRotate = function () {
     // Toggle state and update button
     window.pbsRotateDeals = !window.pbsRotateDeals;
+    window.pbsSetRotatePref(window.pbsRotateDeals);
     window.updateRotateButton();
 
     // Save Auction Compare state - opening the Deal Source dialog
@@ -120,9 +148,36 @@ window.syncRotateFromDialog = function () {
         window._pbsModalWasOpen = false;
         if (window._pbsLastCheckboxState !== null && window._pbsLastCheckboxState !== window.pbsRotateDeals) {
             window.pbsRotateDeals = window._pbsLastCheckboxState;
+            window.pbsSetRotatePref(window.pbsRotateDeals);
             window.updateRotateButton();
         }
         window._pbsLastCheckboxState = null;
     }
 };
+// Restore the remembered preference at load, so the toggle button is already
+// correct before the first scenario click. window.pbsRotateDeals was previously
+// undefined until a scenario ran, which meant the button always started in the
+// "no rotate" state even for a user who had turned rotation on.
+//
+// The label needs more than one call: the PBS Dynamic layout rebuilds the
+// shortcut buttons after this script runs, and with both PBS and BBOalert
+// installed that build happens more than once, so a single call gets overwritten.
+//
+// This uses a FIXED, TERMINATING schedule rather than a MutationObserver.
+// An observer here is actively dangerous: updateRotateButton() writes the
+// button's textContent, which is itself a mutation, so observing the panel and
+// reacting by updating the button feeds back into itself and pegs the main
+// thread - the BBO tab stops responding to clicks entirely. Do not reintroduce
+// one. These few checks cover the layout rebuilds and then stop for good.
+(function () {
+    var pref = window.pbsGetRotatePref();
+    if (pref !== null) window.pbsRotateDeals = pref;
+
+    var checkpoints = [0, 500, 2000, 5000, 9000];
+    checkpoints.forEach(function (ms) {
+        setTimeout(function () {
+            if (window.updateRotateButton) window.updateRotateButton();
+        }, ms);
+    });
+})();
 //Script

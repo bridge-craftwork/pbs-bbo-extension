@@ -1,7 +1,12 @@
 //Script,onDataLoad
 window.setDealerCode = function (dealerCode, dealer = "S", rotateDeals = true) {
     window.pbsDealer = dealer;
-    window.pbsRotateDeals = rotateDeals;
+    // A stored rotate preference wins over the scenario's argument. Every scenario
+    // passes true, so that argument carries no per-scenario intent - honouring it
+    // over the user's explicit choice just meant the choice was lost on the next
+    // scenario click. With nothing stored, the scenario's value still applies.
+    var rotatePref = window.pbsGetRotatePref ? window.pbsGetRotatePref() : null;
+    window.pbsRotateDeals = (rotatePref === null) ? rotateDeals : rotatePref;
     if (window.updateRotateButton) window.updateRotateButton();
 
     var savedCompareEnabled = window.bbaCompareEnabled || false;
@@ -69,7 +74,7 @@ window.setDealerCode = function (dealerCode, dealer = "S", rotateDeals = true) {
         {
             ready: () => $("mat-option", doc).length === 0,
             action: () => {
-                if (($("modal-content mat-checkbox:first", doc).hasClass("mat-checkbox-checked")) != rotateDeals) {
+                if (($("modal-content mat-checkbox:first", doc).hasClass("mat-checkbox-checked")) != window.pbsRotateDeals) {
                     $("modal-content mat-checkbox:first .mat-checkbox-input", doc).trigger("click");
                 }
             }
