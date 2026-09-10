@@ -15,14 +15,34 @@ The chain starts from `PBSCache` in the user's `localStorage`, which points at a
 `-PBS*.txt` file in `bridge-craftwork/Practice-Bidding-Scenarios`. That file
 lists `Import,` lines; each one is fetched and included as data records.
 
-A file in this folder carries its own script-block markers, so it behaves
-exactly like a block written inline in `-PBS.txt`:
+Two kinds of file live here, and the difference is which directive loads them.
+
+**`runtime/*.js` - loaded with `Import,`.** These carry their own script-block
+markers, so each behaves exactly like a block written inline in `-PBS.txt`:
 
 ```js
 //Script,onDataLoad     <- the event this block runs on
 ...
 //Script                <- end of block
 ```
+
+**`runtime/plugins/*.js` - loaded with `Javascript,`.** These are `eval`'d whole
+and register their own handlers through `addBBOalertEvent`, so they carry no
+markers. `BBAcompare.js` is one.
+
+The distinction is only about how they are loaded. It says nothing about where
+they should live, and reading it as a scope boundary is how `BBAcompare.js` came
+to be left behind by the original split: that work was framed as "extract the
+JavaScript inline in `-PBS*.txt`", and BBAcompare was already an external URL, so
+by that yardstick it looked finished. It was not - it simply had no channel, and
+shipped every change straight to release with no beta stage.
+
+Anything fetched at run time belongs here, whichever directive loads it.
+
+The exceptions are files in repositories we do not control -
+`stanmaz/BBOalert`'s `PBNcapture.js` and `PBStooltips.js`. We cannot branch
+those, so they stay on `master` and have no channel. That is a constraint, not a
+choice, and it is worth remembering that those two still ship unstaged.
 
 Fetching works because `raw.githubusercontent.com` sends
 `Access-Control-Allow-Origin: *`. The extension declares no `host_permissions`
