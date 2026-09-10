@@ -31,7 +31,7 @@ resolving for everyone.
 
 ## Channels
 
-`-PBS.txt` (release) and `-PBS-beta.txt` (beta) can import the same paths from
+`-PBS.txt` (release) and `-PBS-beta.txt` (beta) import the same paths from
 different branches, so a beta test period isolates users without duplicating the
 code:
 
@@ -40,20 +40,32 @@ code:
 -PBS-beta.txt  ->  .../pbs-bbo-extension/blob/main/runtime/...
 ```
 
-Promotion is then a merge rather than copying files between variants.
+Promotion is a merge — `main` into `release` in this repo — rather than copying
+files between variants. Nothing in `runtime/` may name a channel: a version
+string hardcoded here would describe the wrong one for half the users. The data
+file declares `window.pbsVersionLabel` and `window.pbsClientVersion`, and code
+here reads those.
+
+Beware the raw CDN cache. `raw.githubusercontent.com` serves a stale copy for
+minutes after a push, so a test run right after a merge can exercise the *old*
+file and look like a failed fix. Cache-bust with a query string when checking by
+`curl`, and in the browser confirm what is loaded by reading the function back
+(`setDealerCode.toString()`) rather than trusting the URL.
 
 ## Migration status
 
-Copied here, still also served from `Practice-Bidding-Scenarios/js/` while
-release continues to use that location:
+`-PBS.txt` (release) and `-PBS-beta.txt` (beta) are both thin import lists
+carrying no JavaScript of their own. `-PBS-toggle.txt` has a PR open to do the
+same; until it merges, that file is still a stale v4.1.8 copy of release.
 
-- `setDealerCode-polling.js`
-- `toggleRotate.js`
+`Practice-Bidding-Scenarios/js/` still holds the pre-split originals
+(`setDealerCode-polling.js`, `toggleRotate.js`, `setDealerCode.js`). Nothing
+imports them any more, and they are kept only so that URLs which may still sit
+in somebody's `PBSCache` keep resolving. **Do not edit them** — they are frozen
+copies, and a fix applied there reaches nobody. That trap has already been
+sprung once: after the beta split these two files went on being imported from
+`js/` while the fixed copies here were imported by nothing, so two fixes that
+were believed shipped were in fact loaded by no one for a day.
 
-Not copied: `js/setDealerCode.js`, the pre-polling variant. No `-PBS*.txt`
-imports it.
-
-Still inline in the `-PBS*.txt` files, to be extracted one block at a time:
-the table launchers, the PBS Dynamic layout builder, `onAnyMutation`, and the
-HCP display. Preserve their relative order when extracting — later blocks use
+When extracting anything further, preserve relative order — later blocks use
 globals that earlier ones define.

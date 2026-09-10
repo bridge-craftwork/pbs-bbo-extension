@@ -63,7 +63,7 @@ PBSCache (localStorage) contains:
 | `PBSSettings` | Settings toggle states (7 boolean flags) |
 | `BBOalertPlugin <name>` | Plugin configs (PBS, BBA Compare, PBN Capture) — uses BBOalert prefix with space because `-PBS.txt` hardcodes `localStorage.getItem('BBOalertPlugin PBS')` |
 
-The `BBOalertPlugin ` prefix (with trailing space before label) matches BBOalert's convention and is required for compatibility with `-PBS.txt`'s config change detection (lines 1018, 1090).
+The `BBOalertPlugin ` prefix (with trailing space before label) matches BBOalert's convention and is required for compatibility with the config change detection, which now lives in `runtime/onAnyMutation-config.js` and `runtime/pbsDynamicLayout.js` rather than inline in `-PBS.txt`.
 
 ## Key Files
 
@@ -94,7 +94,7 @@ It is not packaged: nothing there is in `src/`, and nothing there goes through
 store review. A BBO UI change can therefore be fixed by pushing to this repo,
 where the same code in `src/` would need a Chrome/Firefox/App Store release.
 
-`-PBS-beta.txt` imports it (release still has its blocks inline). Each file
+Both `-PBS.txt` and `-PBS-beta.txt` import it, from different branches. Each file
 carries its own `//Script,<event>` … `//Script` markers, so it behaves exactly
 like a block written inline in the data file. See `runtime/README.md`.
 
@@ -158,6 +158,6 @@ Config change detection runs in a `Script,onAnyMutation` block, reading from `lo
 ## Known Issues
 
 - **Iframe destruction on navDiv flicker**: BBO's navDiv briefly hides during normal operation, causing `main.js` to destroy and recreate the iframe. Shows as "BBA Compare: Iframe window unload" in console. Doesn't cause functional problems but wastes resources.
-- **BBOalertPlugin prefix**: Can't rename to `PBSPlugin` until `-PBS.txt` is updated (lines 1018, 1090 hardcode `BBOalertPlugin PBS`). Tracked as coordinated change with PBS repo.
+- **BBOalertPlugin prefix**: Can't rename to `PBSPlugin` until `runtime/onAnyMutation-config.js` and `runtime/pbsDynamicLayout.js` are updated (both hardcode `BBOalertPlugin PBS`). Now a single-repo change rather than a coordinated one, since both files live here.
 - **BBO's Phoenix UI**: BBO is mid-migration to a new UI (`bbo-phx-*`, `bbo-create-table-modal`). Selectors written against the old markup fail silently, because jQuery `.click()` on an empty set throws nothing. Prefer stable ids and `:visible` over positional `.eq(n)` — BBO now renders some labels on two surfaces at once.
-- **Both extensions installed**: fixed by `runtime/activeWatcher.js`, but only when *both* data files import it. Until release carries it too, a user with PBS + BBOalert can still hit the freeze.
+- **Both extensions installed**: `runtime/activeWatcher.js` is imported by both `-PBS.txt` and `-PBS-beta.txt`, which covers a user whose BBOalert is pointed at one of those. It does **not** cover an *unconfigured* BBOalert: `BBOalertCache` seeds to an empty `"BBOalert\n"`, so that instance imports nothing, registers no watcher, and still runs its own `BBOobserver` — and the tab still freezes. Measured, with a pre-split control run to confirm the split didn't cause it. PBS cannot fix this from its side; see [docs/2026-09-BBO-phoenix-and-freeze.md](docs/2026-09-BBO-phoenix-and-freeze.md).
