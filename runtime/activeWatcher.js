@@ -65,16 +65,46 @@
         return owner === null || owner === myHost;
     }
 
+    // Only ever re-connect an observer WE disconnected. BBAcompare replaces
+    // BBOalert's observer with its own idleModeObserver and leaves BBOobserver
+    // disconnected on purpose; blindly calling observe() would resurrect it
+    // alongside BBAcompare's, giving that iframe two live observers, duplicate
+    // per-mutation work, and defeating the optimisation it installed.
+    var weDisconnected = false;
+
+    function otherHostPresent() {
+        try {
+            var top = parent.document;
+            return myHost === 'PBS' ? !!top.getElementById('bboalert-iframe')
+                                    : !!top.getElementById('pbs-iframe');
+        } catch (e) { return false; }
+    }
+
     function apply(why) {
+        // Nothing to serialise unless both hosts are actually on the page. Staying
+        // out entirely keeps the single-extension case exactly as it is today -
+        // including BBAcompare's observer swap when BBOalert runs alone.
+        if (!otherHostPresent()) {
+            if (weDisconnected) {
+                try { BBOobserver.observe(targetNode, config); weDisconnected = false;
+                      console.log('[PBS watcher] ' + myHost + ' -> ACTIVE (other host gone)'); }
+                catch (e) { /* nothing to restore */ }
+            }
+            return;
+        }
         var active = amActive();
         try {
             if (typeof BBOobserver === 'undefined') return;
             if (active) {
-                // observe() on an already-observing instance is a no-op, so this is
-                // safe to call repeatedly.
-                BBOobserver.observe(targetNode, config);
-            } else {
+                if (weDisconnected) {
+                    BBOobserver.observe(targetNode, config);
+                    weDisconnected = false;
+                }
+            } else if (!weDisconnected) {
                 BBOobserver.disconnect();
+                weDisconnected = true;
+            } else {
+                return;   // already standing by, nothing to say
             }
             console.log('[PBS watcher] ' + myHost + ' -> ' + (active ? 'ACTIVE' : 'standby') +
                         (why ? ' (' + why + ')' : ''));
@@ -94,16 +124,12 @@
     // Keep our own claim fresh, and notice when the other side takes over.
     setInterval(function () {
         touch();
-        var want = amActive();
-        try {
-            if (typeof BBOobserver === 'undefined') return;
-            if (!want) BBOobserver.disconnect();
-        } catch (e) { /* iframe going away */ }
-        void want;
+        apply('');
     }, 2000);
 
     window.pbsWatcherStatus = function () {
-        return { me: myHost, owner: currentOwner(), active: amActive() };
+        return { me: myHost, owner: currentOwner(), active: amActive(),
+                 otherHost: otherHostPresent(), weDisconnected: weDisconnected };
     };
 })();
 //Script
