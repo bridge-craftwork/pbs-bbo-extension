@@ -335,7 +335,7 @@
                             var _os = /Win/i.test(_pf) ? 'Windows' : /Mac/i.test(_pf) ? 'macOS' : /Linux/i.test(_pf) ? 'Linux' : 'Unknown';
                             fetch('https://bba.harmonicsystems.com/api/scenario/select', {
                                 method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'X-Client-Version': (window.pbsClientVersion || '1.9.26-beta'), 'X-Client-Info': 'ext=' + _ext + '; browser=' + _br + '; os=' + _os },
+                                headers: { 'Content-Type': 'application/json', 'X-Client-Version': (window.pbsClientVersion || 'unset'), 'X-Client-Info': 'ext=' + _ext + '; browser=' + _br + '; os=' + _os },
                                 body: JSON.stringify({ scenario: scenarioName, user: whoAmI() || 'anonymous' })
                             }).catch(function() {});
                             window.pbsShowHCP = true;
@@ -819,9 +819,13 @@
         // Channel and version come from the DATA FILE, which is the only per-channel
         // artefact left: -PBS.txt and -PBS-beta.txt import these same runtime/ files
         // from different branches, so hardcoding a version here would make release
-        // users report themselves as beta. The fallbacks keep an older data file that
-        // sets neither working unchanged.
-        console.log('PBS ' + (window.pbsVersionLabel || 'v4.1.11-beta-autostart') + ': Initializing...');
+        // users report themselves as beta.
+        //
+        // The fallback is deliberately NOT a real version. It used to be the beta
+        // strings, which meant a data file that forgot to set these would quietly
+        // mislabel its users as beta - a wrong answer is worse than an obviously
+        // missing one, in a banner and in telemetry alike.
+        console.log('PBS ' + (window.pbsVersionLabel || 'version unset') + ': Initializing...');
         console.log('PBS Dynamic: Test mode =', pbsConfig.Enable_Test_Mode);
         console.log('PBS Dynamic: Beta layout =', pbsConfig.Use_Beta_Layout);
 
