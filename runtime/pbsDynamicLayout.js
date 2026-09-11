@@ -19,209 +19,203 @@
     // Flag to prevent multiple simultaneous rebuilds
     window._pbsDynamicBuilding = false;
 
-    // GitHub URLs
-    var GITHUB_OWNER = 'bridge-craftwork';
-    var GITHUB_REPO = 'Practice-Bidding-Scenarios';
-    var LAYOUT_RELEASE_URL = 'https://raw.githubusercontent.com/' + GITHUB_OWNER + '/' + GITHUB_REPO + '/main/btn/-button-layout-release.txt';
-    var LAYOUT_BETA_URL = 'https://raw.githubusercontent.com/' + GITHUB_OWNER + '/' + GITHUB_REPO + '/main/btn/-button-layout-beta.txt';
-    var PBS_TEST_API = 'https://api.github.com/repos/' + GITHUB_OWNER + '/' + GITHUB_REPO + '/contents/pbs-test';
-    var PBS_RELEASE_API = 'https://api.github.com/repos/' + GITHUB_OWNER + '/' + GITHUB_REPO + '/contents/pbs-release';
-    var PBS_TEST_BASE = 'https://raw.githubusercontent.com/' + GITHUB_OWNER + '/' + GITHUB_REPO + '/main/pbs-test';
-    var PBS_RELEASE_BASE = 'https://raw.githubusercontent.com/' + GITHUB_OWNER + '/' + GITHUB_REPO + '/main/pbs-release';
+    // GitHub URLs. The menu comes from one manifest per tier; a scenario's dealer
+    // script comes from its .dlr, fetched on click. Both are generated in the PBS
+    // repo, and a push to its main branch is the publish.
+    var PBS_RAW_BASE = 'https://raw.githubusercontent.com/bridge-craftwork/Practice-Bidding-Scenarios/main';
+    var MANIFEST_BASE = PBS_RAW_BASE + '/manifest';
 
     // Cache-buster: append a unique param to GitHub fetches so the browser/CDN
     // never serve a stale copy after a push (fixes the "refresh doesn't update
     // the menu" lag). Scoped to this IIFE only; the global fetch is untouched.
     var _pbsOrigFetch = window.fetch.bind(window);
     function fetch(u, opts) {
-        if (typeof u === 'string' && (u.indexOf('githubusercontent.com') !== -1 || u.indexOf('api.github.com') !== -1)) {
+        if (typeof u === 'string' && u.indexOf('githubusercontent.com') !== -1) {
             u += (u.indexOf('?') === -1 ? '?' : '&') + '_cb=' + Date.now();
         }
         return _pbsOrigFetch(u, opts);
     }
 
-    // Track referenced buttons and missing PBS files
-    var referencedScenarios = [];
-    var missingPbsFiles = [];
+    // The manifest the current menu was built from
+    var manifest = null;
 
-    // Fetch and parse PBS file metadata (button text and style)
-    // Both pbs-release and pbs-test use .pbs extension
-    // Returns { text, style, missing: boolean }
-    function fetchPbsMetadata(name, baseUrl) {
-        var rawUrl = baseUrl + '/' + name + '.pbs';
-        return fetch(rawUrl)
+    // The two toggles pick one of four manifests
+    function manifestTier() {
+        if (pbsConfig.Use_Beta_Layout) return pbsConfig.Enable_Test_Mode ? 'test' : 'beta';
+        return pbsConfig.Enable_Test_Mode ? 'release-test' : 'release';
+    }
+
+    // The test tiers may be retired on the PBS side; if one is gone, fall back to
+    // the same layout without the test section rather than showing no menu.
+    var TIER_FALLBACK = { 'test': 'beta', 'release-test': 'release' };
+
+    function loadManifest(tier) {
+        return fetch(MANIFEST_BASE + '/manifest-' + tier + '.json')
             .then(function(response) {
-                if (!response.ok) {
-                    throw new Error('File not found');
-                }
-                return response.text();
-            })
-            .then(function(content) {
-                // Check if it's a 404 page (GitHub returns HTML for missing raw files)
-                if (content.includes('<!DOCTYPE html>') || content.includes('404: Not Found')) {
-                    throw new Error('File not found');
-                }
-                var result = parsePbsButton(content, name);
-                result.missing = false;
-                return result;
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                return response.json();
             })
             .catch(function(err) {
-                console.warn('PBS Dynamic: Failed to fetch metadata for', name);
-                return { text: name.replace(/_/g, ' '), style: {}, missing: true };
+                var fallback = TIER_FALLBACK[tier];
+                if (!fallback) throw err;
+                console.warn('PBS Dynamic: manifest-' + tier + '.json unavailable (' + err.message + '), using ' + fallback);
+                return loadManifest(fallback);
             });
     }
 
-    // Parse Button line from PBS content
-    // Format: Button,<text>,<chat/tooltip>%alias%,<style>
-    // The chat/tooltip is multiline text that gets displayed in chat and as hover tooltip
-    function parsePbsButton(content, name) {
-        var result = { text: name.replace(/_/g, ' '), style: {}, chat: '', alias: name };
-
-        // Find the full Button line(s) - may span multiple lines with \n\ continuations
-        var buttonLineMatch = content.match(/^Button,(.*)$/m);
-        if (buttonLineMatch) {
-            var buttonLine = buttonLineMatch[1];
-
-            // Handle line continuations (lines ending with \n\)
-            var lines = content.split('\n');
-            var inButton = false;
-            var fullButtonContent = '';
-            for (var i = 0; i < lines.length; i++) {
-                var line = lines[i];
-                if (line.startsWith('Button,')) {
-                    inButton = true;
-                    fullButtonContent = line.substring(7); // Remove 'Button,'
-                } else if (inButton) {
-                    fullButtonContent += line;
-                    if (!line.endsWith('\\')) {
-                        break; // End of button line
-                    }
-                }
-            }
-
-            // Parse: text,chat%alias%,style
-            // First comma separates button text from the rest
-            var firstComma = fullButtonContent.indexOf(',');
-            if (firstComma > 0) {
-                result.text = fullButtonContent.substring(0, firstComma).trim();
-                var rest = fullButtonContent.substring(firstComma + 1);
-
-                // Find %alias% pattern - look for valid alias (alphanumeric/underscore)
-                // This avoids matching percentages like "08%" in the content
-                // Use lookahead (?=,|$) so the comma isn't consumed by the match
-                var aliasMatch = rest.match(/%([A-Za-z][A-Za-z0-9_]*)%(?=,|$)/);
-                if (aliasMatch) {
-                    result.alias = aliasMatch[1];
-                    // Chat text is everything before %alias%
-                    var aliasStart = rest.lastIndexOf('%' + aliasMatch[1] + '%');
-                    // Raw format for chat: replace \n\ with \n (strip continuation backslashes)
-                    result.chatRaw = rest.substring(0, aliasStart).replace(/\\n\\/g, '\\n');
-                    // Convert for tooltip display (actual newlines)
-                    result.chat = result.chatRaw.replace(/\\n/g, '\n');
-
-                    // Style is after %alias%,
-                    var afterAlias = rest.substring(aliasStart + aliasMatch[0].length);
-                    if (afterAlias.startsWith(',')) {
-                        var styleStr = afterAlias.substring(1).trim();
-                        var styleParts = styleStr.split(/\s+/);
-                        for (var j = 0; j < styleParts.length; j++) {
-                            var kv = styleParts[j].split('=');
-                            if (kv.length === 2) {
-                                result.style[kv[0]] = kv[1];
-                            }
-                        }
-                    }
-                }
-            } else {
-                result.text = fullButtonContent.trim();
-            }
+    // Menu metadata for a scenario, or null if the manifest has none
+    function scenarioInfo(name) {
+        if (!manifest) return null;
+        if (manifest.scenarios && manifest.scenarios[name]) return manifest.scenarios[name];
+        var tests = manifest.testScenarios || [];
+        for (var i = 0; i < tests.length; i++) {
+            if (tests[i].name === name) return tests[i];
         }
-
-        return result;
+        return null;
     }
 
-    // Parse button item from layout line
-    function parseButtonItem(item) {
-        item = item.trim();
-        var parts = item.split(':');
-        var name = parts[0];
-        var color = null;
-        var width = null;
-
-        for (var i = 1; i < parts.length; i++) {
-            if (parts[i].endsWith('%')) {
-                width = parts[i];
-            } else {
-                color = parts[i];
-            }
+    // --- dealerFromDlr: begin (tools/check-dlr-strip.mjs extracts this) ---
+    // Turn a .dlr into the arguments for setDealerCode(code, seat, true), exactly
+    // as the PBS pipeline did when it wrapped the .dlr in a .pbs: a port of
+    // parse_dlr_file and bbo_dealer_code in PBS's
+    // build-scripts-mac/operations/pbs_from_dlr.py. Keep the two in step;
+    // tools/check-dlr-strip.mjs compares this against the pipeline's output.
+    var DLR_META_KEYS = 'alias|button-text|scenario-title|gib-works|bba-works|auction-filter|convention-card-ns|convention-card-ew|quiz-control';
+    function dealerFromDlr(text) {
+        var meta = {};
+        var metaPattern = new RegExp('^#\\s*(' + DLR_META_KEYS + '):\\s*(.*)$', 'gm');
+        var m;
+        while ((m = metaPattern.exec(text)) !== null) {
+            meta[m[1]] = m[2].trim();
         }
 
-        return { name: name, color: color, width: width };
+        var seatMatch = text.match(/^\s*dealer\s+(south|north|east|west)/m);
+        var seat = seatMatch ? { south: 'S', north: 'N', east: 'E', west: 'W' }[seatMatch[1]] : 'S';
+
+        var chatMatch = text.match(/\/\*@chat\s*\n([\s\S]*?)@chat\*\//);
+        var chat = chatMatch ? chatMatch[1].replace(/\s+$/, '') : null;
+
+        // Drop the # key: value header, the dealer line and the @chat block
+        var headerLine = new RegExp('^#\\s*(' + DLR_META_KEYS + '):');
+        var lines = text.split('\n');
+        var body = [];
+        var inChat = false;
+        var pastHeader = false;
+        for (var i = 0; i < lines.length; i++) {
+            var line = lines[i];
+            if (line.indexOf('/*@chat') !== -1) { inChat = true; continue; }
+            if (line.indexOf('@chat*/') !== -1) { inChat = false; continue; }
+            if (inChat) continue;
+            if (!pastHeader) {
+                if (headerLine.test(line)) continue;
+                if (/^dealer\s+(south|north|east|west)/.test(line.trim())) continue;
+                if (line.trim() === '') continue;
+                pastHeader = true;
+            }
+            body.push(line);
+        }
+        var code = body.join('\n').replace(/\n*action\s+printpbn\s*\n*/g, '\n');
+
+        // Convention cards and the auction filter ride along as a comment block
+        var out = [];
+        if (meta['auction-filter'] || meta['convention-card-ns'] || meta['convention-card-ew']) {
+            out.push('', '/*');
+            if (meta['convention-card-ns']) out.push('convention-card-ns: ' + meta['convention-card-ns']);
+            if (meta['convention-card-ew']) out.push('convention-card-ew: ' + meta['convention-card-ew']);
+            if (meta['auction-filter']) out.push('auction-filter: ' + meta['auction-filter']);
+            out.push('*/');
+        }
+        out.push(code.replace(/\s+$/, ''));
+
+        return {
+            // The newlines are the ones the .pbs put either side of the backticks
+            code: '\n' + out.join('\n') + '\n',
+            seat: seat,
+            // Chat in the form the manifest carries it: \n tokens, wide commas
+            chat: chat === null ? null : '\\n' + chat.replace(/, /g, '，').split('\n').join('\\n') + '\\n',
+            conventionCardNS: meta['convention-card-ns'] || null,
+            conventionCardEW: meta['convention-card-ew'] || null
+        };
+    }
+    // --- dealerFromDlr: end ---
+
+    // Where a scenario's dealer script lives. The manifest may name the file (e.g.
+    // a leveled variant); otherwise it is dlr/<name>.dlr.
+    function dlrUrl(name, info) {
+        if (info && info.dlr) return PBS_RAW_BASE + '/' + info.dlr;
+        return PBS_RAW_BASE + '/dlr/' + name + '.dlr';
     }
 
-    // Parse layout line into button array
-    function parseLayoutLine(line) {
-        var buttons = [];
-        var parts = [];
-        var current = '';
-        var parenDepth = 0;
+    function logScenarioSelect(scenarioName) {
+        var _ext = (document.title.indexOf('PBS') >= 0) ? 'PBSforBBO' : 'BBOAlert';
+        var _ua = navigator.userAgent;
+        var _br = _ua.indexOf('Edg/') > -1 ? 'Edge' : _ua.indexOf('Chrome/') > -1 ? 'Chrome' : _ua.indexOf('Firefox/') > -1 ? 'Firefox' : _ua.indexOf('Safari/') > -1 ? 'Safari' : 'Unknown';
+        var _pf = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+        var _os = /Win/i.test(_pf) ? 'Windows' : /Mac/i.test(_pf) ? 'macOS' : /Linux/i.test(_pf) ? 'Linux' : 'Unknown';
+        fetch('https://bba.harmonicsystems.com/api/scenario/select', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Client-Version': (window.pbsClientVersion || 'unset'), 'X-Client-Info': 'ext=' + _ext + '; browser=' + _br + '; os=' + _os },
+            body: JSON.stringify({ scenario: scenarioName, user: whoAmI() || 'anonymous' })
+        }).catch(function() {});
+    }
 
-        for (var i = 0; i < line.length; i++) {
-            var char = line[i];
-            if (char === '(') {
-                parenDepth++;
-                current += char;
-            } else if (char === ')') {
-                parenDepth--;
-                current += char;
-            } else if (char === ',' && parenDepth === 0) {
-                parts.push(current.trim());
-                current = '';
-            } else {
-                current += char;
-            }
-        }
-        if (current.trim()) {
-            parts.push(current.trim());
-        }
+    // Load a scenario: send its chat, start a table if at home, then fetch the
+    // .dlr and hand the dealer script to setDealerCode.
+    function loadScenario(scenarioName) {
+        var info = scenarioInfo(scenarioName);
+        console.log('PBS Dynamic: Loading scenario', scenarioName);
 
-        for (var j = 0; j < parts.length; j++) {
-            var part = parts[j].trim();
-            if (part.startsWith('(') && part.endsWith(')')) {
-                var groupContent = part.slice(1, -1);
-                var groupItems = groupContent.split(',').map(function(s) { return s.trim(); });
-                var totalWidth = 50;
-                var n = groupItems.length;
-                var baseWidth = Math.floor(totalWidth / n);
-                var remainder = totalWidth % n;
-
-                for (var k = 0; k < groupItems.length; k++) {
-                    var btn = parseButtonItem(groupItems[k]);
-                    btn.width = btn.width || (baseWidth + (k >= n - remainder ? 1 : 0)) + '%';
-                    btn.grouped = true;
-                    buttons.push(btn);
-                }
-            } else {
-                var btn = parseButtonItem(part);
-                btn.grouped = false;
-                buttons.push(btn);
-            }
+        // Send chat message to current chat destination (scenario description)
+        var chatSent = false;
+        if (info && info.chat) {
+            setChatMessage(info.chat, true);
+            chatSent = true;
         }
 
-        var nonGrouped = buttons.filter(function(b) { return !b.grouped; });
-        var grouped = buttons.filter(function(b) { return b.grouped; });
+        var load = function() {
+            return fetch(dlrUrl(scenarioName, info))
+                .then(function(response) {
+                    if (!response.ok) throw new Error('HTTP ' + response.status);
+                    return response.text();
+                })
+                .then(function(text) {
+                    var dlr = dealerFromDlr(text);
+                    // No manifest entry (e.g. an orphan): the .dlr has the chat
+                    if (!chatSent && dlr.chat) setChatMessage(dlr.chat, true);
+                    window.currentPBSScenario = scenarioName;
+                    window.currentPBSScenarioFilename = scenarioName;
+                    window.currentPBSConventionCardNS = (info && info.conventionCardNS) || dlr.conventionCardNS;
+                    window.currentPBSConventionCardEW = (info && info.conventionCardEW) || dlr.conventionCardEW;
+                    logScenarioSelect(scenarioName);
+                    window.pbsShowHCP = true;
+                    setDealerCode(dlr.code, dlr.seat, true);
+                })
+                .catch(function(err) { console.error('PBS Dynamic: Failed to load', scenarioName, err); });
+        };
 
-        if (nonGrouped.length === 1 && grouped.length === 0) {
-            if (!nonGrouped[0].width) nonGrouped[0].width = '100%';
-        } else if (nonGrouped.length === 2 && grouped.length === 0) {
-            nonGrouped.forEach(function(b) { if (!b.width) b.width = '50%'; });
-        } else if (nonGrouped.length === 1 && grouped.length > 0) {
-            if (!nonGrouped[0].width) nonGrouped[0].width = '50%';
-        } else if (nonGrouped.length === 2) {
-            nonGrouped.forEach(function(b) { if (!b.width) b.width = '50%'; });
+        // Auto-start a table if we're on the BBO home screen (home button disabled = at home)
+        var homeButton = $("nav-bar button", BBOcontext()).eq(0);
+        var atHome = homeButton.length > 0 && homeButton.prop('disabled');
+        console.log('[PBS] click atHome=' + atHome + ' startTable=' + (typeof window.startTable));
+        if (atHome && typeof window.startTable === 'function') {
+            var preferred = localStorage.getItem('pbsLastTableType') || 'bidding';
+            return window.startTable(preferred, { requireHome: false })
+                .then(load)
+                .catch(function(err) { console.error('PBS auto-start failed', err); });
         }
+        return load();
+    }
 
-        return buttons;
+    // Exposed for tests: the same path a button click takes
+    window.pbsLoadScenario = loadScenario;
+
+    // Chat as tooltip text: real newlines, no leading "---", suit symbols
+    function chatTooltip(chat) {
+        return chat.replace(/\\n/g, '\n').replace(/^\n?---\s*/, '').trim()
+            .replace(/!S/g, '♠')
+            .replace(/!H/g, '♥')
+            .replace(/!D/g, '♦')
+            .replace(/!C/g, '♣');
     }
 
     // Create a button element
@@ -253,288 +247,99 @@
         return bt;
     }
 
-    // Create a scenario button - button created sync, metadata loaded async
-    function createScenarioButton(name, layoutStyle) {
+    // Create a scenario button from its manifest entry. style: width, color,
+    // fontSize; the background is lightpink when GIB can't bid the scenario.
+    function createScenarioButton(name, style, insertBefore) {
         var adPanel = document.getElementById('adpanel2');
         if (!adPanel) return null;
 
-        // Track this scenario as referenced by the layout
-        referencedScenarios.push(name);
-
+        var info = scenarioInfo(name);
         var bt = document.createElement('button');
-        // Start with filename as text, will be updated when metadata loads
-        bt.textContent = name.replace(/_/g, ' ');
-        bt.style.backgroundColor = layoutStyle.backgroundColor || 'white';
-        bt.style.color = layoutStyle.color || 'black';
+        bt.textContent = (info && info.buttonText) || name.replace(/_/g, ' ');
+        bt.style.backgroundColor = (info && info.gibWorks === false) ? 'lightpink' : 'white';
+        bt.style.color = style.color || 'black';
         bt.style.textAlign = 'center';
         bt.style.display = 'inline';
-        bt.style.fontSize = '20px';
-        bt.style.width = layoutStyle.width || '50%';
+        bt.style.fontSize = style.fontSize || '20px';
+        bt.style.width = style.width || '50%';
         bt.setAttribute('data-scenario', name);
-        bt.setAttribute('data-pbs-url', PBS_RELEASE_BASE + '/' + name + '.pbs');
 
-        // Add button to panel immediately (sync)
-        adPanel.appendChild(bt);
+        if (info && info.chat) {
+            bt.value = info.chat + '%' + (info.alias || name) + '%';
+            // Set title directly for tooltip (PBStooltips.js runs before buttons exist)
+            bt.title = chatTooltip(info.chat);
+        }
 
-        // Fetch metadata async and update button text, style, and tooltip
-        fetchPbsMetadata(name, PBS_RELEASE_BASE).then(function(meta) {
-            bt.textContent = meta.text;
-            if (meta.missing) {
-                // Show missing files with red text
-                bt.style.color = 'red';
-                bt.setAttribute('data-missing', 'true');
-                missingPbsFiles.push(name);
-            } else {
-                if (meta.style.backgroundColor) bt.style.backgroundColor = meta.style.backgroundColor;
-                if (meta.style.color && !layoutStyle.color) bt.style.color = meta.style.color;
-                if (meta.style.width && !layoutStyle.width) bt.style.width = meta.style.width;
-                // Set tooltip and chat data
-                if (meta.chat) {
-                    bt.value = meta.chatRaw + '%' + meta.alias + '%';
-                    bt.setAttribute('data-chat', meta.chatRaw);  // Raw format for BBO chat
-                    // Set title directly for tooltip (PBStooltips.js runs before buttons exist)
-                    // Remove leading \n--- prefix and convert suit symbols
-                    var tooltipText = meta.chat.replace(/^\n?---\s*/, '').trim()  // Converted format for tooltip
-                        .replace(/!S/g, '\u2660')
-                        .replace(/!H/g, '\u2665')
-                        .replace(/!D/g, '\u2666')
-                        .replace(/!C/g, '\u2663');
-                    bt.title = tooltipText;
-                }
-            }
-        });
+        bt.onclick = function() { loadScenario(name); };
 
-        bt.onclick = function() {
-            var scenarioName = this.getAttribute('data-scenario');
-            var url = this.getAttribute('data-pbs-url');
-            var chatText = this.getAttribute('data-chat');
-            console.log('PBS Dynamic: Loading scenario', scenarioName);
-
-            // Send chat message to current chat destination (scenario description)
-            if (chatText) {
-                setChatMessage(chatText, true);
-            }
-
-            var loadScenario = function() {
-                return fetch(url)
-                    .then(function(response) { return response.text(); })
-                    .then(function(content) {
-                        var match = content.match(/setDealerCode\(`([\s\S]*?)`,\s*"([NSEW])",\s*(true|false)\)/);
-                        if (match) {
-                            window.currentPBSScenario = scenarioName;
-                            window.currentPBSScenarioFilename = scenarioName;
-                            // Extract convention-card-ns and convention-card-ew from dealer code comments
-                            var ccNS = match[1].match(/convention-card-ns:\s*(\S+)/);
-                            var ccEW = match[1].match(/convention-card-ew:\s*(\S+)/);
-                            window.currentPBSConventionCardNS = ccNS ? ccNS[1] : null;
-                            window.currentPBSConventionCardEW = ccEW ? ccEW[1] : null;
-                            var _ext = (document.title.indexOf('PBS') >= 0) ? 'PBSforBBO' : 'BBOAlert';
-                            var _ua = navigator.userAgent;
-                            var _br = _ua.indexOf('Edg/') > -1 ? 'Edge' : _ua.indexOf('Chrome/') > -1 ? 'Chrome' : _ua.indexOf('Firefox/') > -1 ? 'Firefox' : _ua.indexOf('Safari/') > -1 ? 'Safari' : 'Unknown';
-                            var _pf = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
-                            var _os = /Win/i.test(_pf) ? 'Windows' : /Mac/i.test(_pf) ? 'macOS' : /Linux/i.test(_pf) ? 'Linux' : 'Unknown';
-                            fetch('https://bba.harmonicsystems.com/api/scenario/select', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'X-Client-Version': (window.pbsClientVersion || 'unset'), 'X-Client-Info': 'ext=' + _ext + '; browser=' + _br + '; os=' + _os },
-                                body: JSON.stringify({ scenario: scenarioName, user: whoAmI() || 'anonymous' })
-                            }).catch(function() {});
-                            window.pbsShowHCP = true;
-                            setDealerCode(match[1], match[2], match[3] === 'true');
-                        }
-                    })
-                    .catch(function(err) { console.error('PBS Dynamic: Failed to load', scenarioName, err); });
-            };
-
-            // Auto-start a table if we're on the BBO home screen (home button disabled = at home)
-            var homeButton = $("nav-bar button", BBOcontext()).eq(0);
-            var atHome = homeButton.length > 0 && homeButton.prop('disabled');
-            console.log('[PBS] click atHome=' + atHome + ' startTable=' + (typeof window.startTable));
-            if (atHome && typeof window.startTable === 'function') {
-                var preferred = localStorage.getItem('pbsLastTableType') || 'bidding';
-                window.startTable(preferred, { requireHome: false })
-                    .then(loadScenario)
-                    .catch(function(err) { console.error('PBS auto-start failed', err); });
-            } else {
-                loadScenario();
-            }
-        };
-
+        if (insertBefore) {
+            adPanel.insertBefore(bt, insertBefore);
+        } else {
+            adPanel.appendChild(bt);
+        }
         return bt;
     }
 
-    // Load test files from GitHub API
-    function loadTestFiles() {
-        return fetch(PBS_TEST_API)
-            .then(function(response) { return response.json(); })
-            .then(function(files) {
-                var testFiles = files
-                    .filter(function(f) { return f.name.endsWith('.pbs'); })
-                    .map(function(f) { return f.name.replace('.pbs', ''); })
-                    .sort();
-                console.log('PBS Dynamic: Found', testFiles.length, 'test files');
-                return testFiles;
-            })
-            .catch(function(err) {
-                console.error('PBS Dynamic: Failed to load test files', err);
-                return [];
-            });
+    // First section header - diagnostic and test sections go above it
+    function firstSectionHeader(adPanel) {
+        var allBtns = adPanel.querySelectorAll('button');
+        for (var i = 0; i < allBtns.length; i++) {
+            if (allBtns[i].style.backgroundColor === 'lightblue' && allBtns[i].style.width === '100%') {
+                return allBtns[i];
+            }
+        }
+        return null;
     }
 
-    // Load pbs-release files from GitHub API
-    function loadReleaseFiles() {
-        return fetch(PBS_RELEASE_API)
-            .then(function(response) { return response.json(); })
-            .then(function(files) {
-                var releaseFiles = files
-                    .filter(function(f) { return f.name.endsWith('.pbs'); })
-                    .map(function(f) { return f.name.replace('.pbs', ''); })
-                    .sort();
-                console.log('PBS: Found', releaseFiles.length, 'release files');
-                return releaseFiles;
-            })
-            .catch(function(err) {
-                console.error('PBS Dynamic: Failed to load beta files', err);
-                return [];
-            });
+    // A bold, full-width header that shows/hides the buttons carrying attr
+    function createToggleHeader(text, backgroundColor, attr, insertBefore) {
+        var adPanel = document.getElementById('adpanel2');
+        var header = document.createElement('button');
+        header.textContent = text;
+        header.style.width = '100%';
+        header.style.backgroundColor = backgroundColor;
+        header.style.color = 'black';
+        header.style.fontWeight = 'bold';
+        header.style.display = 'inline';
+        header.style.fontSize = '18px';
+        adPanel.insertBefore(header, insertBefore);
+        header.onclick = function() {
+            var btns = adPanel.querySelectorAll('[' + attr + ']');
+            for (var i = 0; i < btns.length; i++) {
+                $(btns[i]).toggle();
+            }
+        };
+        return header;
     }
 
     // Add test mode buttons - inserts after action buttons, before first section
     function addTestModeButtons() {
-        if (!pbsConfig.Enable_Test_Mode) return Promise.resolve();
+        if (!pbsConfig.Enable_Test_Mode || !manifest.testScenarios) return;
 
-        return loadTestFiles().then(function(testFiles) {
-            var adPanel = document.getElementById('adpanel2');
-            if (!adPanel) return;
+        var adPanel = document.getElementById('adpanel2');
+        if (!adPanel) return;
 
-            // Find the first section header (lightblue that's not an action button)
-            // Section headers have lightblue background and 100% width
-            var allBtns = adPanel.querySelectorAll('button');
-            var insertBefore = null;
-            for (var i = 0; i < allBtns.length; i++) {
-                var btn = allBtns[i];
-                if (btn.style.backgroundColor === 'lightblue' && btn.style.width === '100%') {
-                    insertBefore = btn;
-                    break;
-                }
-            }
+        var insertBefore = firstSectionHeader(adPanel);
+        // Collapsible test section header (blue like other sections)
+        var headerBtn = createToggleHeader('TEST SCENARIOS', 'lightblue', 'data-test-button', insertBefore);
+        headerBtn.setAttribute('data-test-header', 'true');
 
-            // Create collapsible test section header (blue like other sections)
-            var headerBtn = document.createElement('button');
-            headerBtn.textContent = 'TEST: pbs-test/';
-            headerBtn.style.width = '100%';
-            headerBtn.style.backgroundColor = 'lightblue';
-            headerBtn.style.color = 'black';
-            headerBtn.style.fontWeight = 'bold';
-            headerBtn.style.display = 'inline';
-            headerBtn.style.fontSize = '18px';
-            headerBtn.setAttribute('data-test-header', 'true');
-            adPanel.insertBefore(headerBtn, insertBefore);
-
-            // Create test buttons sync, load metadata async
-            testFiles.forEach(function(name) {
-                var bt = document.createElement('button');
-                bt.textContent = name.replace(/_/g, ' ');
-                bt.style.backgroundColor = 'white';
-                bt.style.color = 'black';
-                bt.style.textAlign = 'center';
-                bt.style.display = 'inline';
-                bt.style.fontSize = '18px';
-                bt.style.width = '50%';
-                bt.setAttribute('data-scenario', name);
-                bt.setAttribute('data-test-button', 'true');
-                adPanel.insertBefore(bt, insertBefore);
-
-                // Load metadata async and update button text, style, and tooltip
-                fetchPbsMetadata(name, PBS_TEST_BASE).then(function(meta) {
-                    bt.textContent = meta.text;
-                    if (meta.style.backgroundColor) bt.style.backgroundColor = meta.style.backgroundColor;
-                    if (meta.style.color) bt.style.color = meta.style.color;
-                    // Set tooltip and chat data
-                    if (meta.chat) {
-                        bt.value = meta.chatRaw + '%' + meta.alias + '%';
-                        bt.setAttribute('data-chat', meta.chatRaw);  // Raw format for BBO chat
-                        // Set title directly for tooltip with suit symbols
-                        var tooltipText = meta.chat.replace(/^\n?---\s*/, '').trim()  // Converted for tooltip
-                            .replace(/!S/g, '\u2660')
-                            .replace(/!H/g, '\u2665')
-                            .replace(/!D/g, '\u2666')
-                            .replace(/!C/g, '\u2663');
-                        bt.title = tooltipText;
-                    }
-                });
-
-                bt.onclick = function() {
-                    var scenarioName = this.getAttribute('data-scenario');
-                    var chatText = this.getAttribute('data-chat');
-                    var url = PBS_TEST_BASE + '/' + scenarioName + '.pbs';
-
-                    // Send chat message to current chat destination (scenario description)
-                    if (chatText) {
-                        setChatMessage(chatText, true);
-                    }
-
-                    fetch(url)
-                        .then(function(response) { return response.text(); })
-                        .then(function(content) {
-                            var match = content.match(/setDealerCode\(`([\s\S]*?)`,\s*"([NSEW])",\s*(true|false)\)/);
-                            if (match) {
-                                window.currentPBSScenario = scenarioName;
-                                window.currentPBSScenarioFilename = scenarioName;
-                                // Extract convention-card-ns and convention-card-ew from dealer code comments
-                                var ccNS = match[1].match(/convention-card-ns:\s*(\S+)/);
-                                var ccEW = match[1].match(/convention-card-ew:\s*(\S+)/);
-                                window.currentPBSConventionCardNS = ccNS ? ccNS[1] : null;
-                                window.currentPBSConventionCardEW = ccEW ? ccEW[1] : null;
-                                window.pbsShowHCP = true;
-                                setDealerCode(match[1], match[2], match[3] === 'true');
-                            }
-                        })
-                        .catch(function(err) { console.error('PBS (TEST):', err); });
-                };
-            });
-
-            // Add click handler for collapse/expand
-            headerBtn.onclick = function() {
-                var testBtns = adPanel.querySelectorAll('[data-test-button]');
-                for (var i = 0; i < testBtns.length; i++) {
-                    $(testBtns[i]).toggle();
-                }
-            };
+        manifest.testScenarios.forEach(function(entry) {
+            var bt = createScenarioButton(entry.name, { width: '50%', fontSize: '18px' }, insertBefore);
+            bt.setAttribute('data-test-button', 'true');
         });
+        console.log('PBS Dynamic: Found', manifest.testScenarios.length, 'test scenarios');
     }
 
-    // Parse and render layout - buttons created sync, metadata loaded async
-    function renderLayout(layoutText) {
-        var lines = layoutText.split('\n');
+    // Render the manifest's layout
+    function renderLayout(layout) {
+        for (var i = 0; i < layout.length; i++) {
+            var item = layout[i];
 
-        for (var i = 0; i < lines.length; i++) {
-            var line = lines[i].trim();
-
-            if (!line || line.startsWith('#')) continue;
-
-            if (line.startsWith('[Major]')) {
-                var content = line.slice(7).trim();
-                var title = content;
-                var url = null;
-                if (content.indexOf('|') !== -1) {
-                    var parts = content.split('|');
-                    title = parts[0].trim();
-                    url = parts[1].trim();
-                }
-                createButton(title, url || '', { width: '100%', backgroundColor: 'LemonChiffon' });
-                continue;
-            }
-
-            if (line.startsWith('[Section]')) {
-                var content = line.slice(9).trim();
-                var title = content;
-                var url = null;
-                if (content.indexOf('|') !== -1) {
-                    var parts = content.split('|');
-                    title = parts[0].trim();
-                    url = parts[1].trim();
-                }
-                var btn = createButton(title, url || '', { width: '100%', backgroundColor: 'lightblue' });
+            if (item.type === 'major') {
+                createButton(item.title, item.url || '', { width: '100%', backgroundColor: 'LemonChiffon' });
+            } else if (item.type === 'section') {
+                var btn = createButton(item.title, item.url || '', { width: '100%', backgroundColor: 'lightblue' });
                 if (btn) {
                     btn.onclick = function() {
                         var next = $(this).next();
@@ -544,36 +349,29 @@
                         }
                     };
                 }
-                continue;
-            }
-
-            if (line.startsWith('[Action]')) {
-                var content = line.slice(8).trim();
-                var parts = content.split('|');
-                var text = parts[0].trim();
-                var script = parts[1] ? parts[1].trim() : '';
-                var width = parts[2] ? parts[2].trim() + '%' : '50%';
-                createButton(text, script, { width: width, backgroundColor: 'lightgreen' });
-                continue;
-            }
-
-            if (line === '---') {
+            } else if (item.type === 'action') {
+                createButton(item.text, item.script, { width: (item.width || '50') + '%', backgroundColor: 'lightgreen' });
+            } else if (item.type === 'separator') {
                 createButton('---', '', { width: '100%', backgroundColor: 'white' });
-                continue;
-            }
-
-            // Button row - create buttons sync, metadata loaded async
-            var buttons = parseLayoutLine(line);
-            for (var j = 0; j < buttons.length; j++) {
-                var layoutBtn = buttons[j];
-                if (layoutBtn.name === '---') {
-                    createButton('---', '', { width: layoutBtn.width || '50%', backgroundColor: 'white' });
-                } else {
-                    var style = { width: layoutBtn.width || '50%' };
-                    if (layoutBtn.color) style.color = layoutBtn.color;
-                    createScenarioButton(layoutBtn.name, style);
+            } else if (item.type === 'row') {
+                for (var j = 0; j < item.buttons.length; j++) {
+                    var layoutBtn = item.buttons[j];
+                    if (layoutBtn.name === '---') {
+                        createButton('---', '', { width: layoutBtn.width || '50%', backgroundColor: 'white' });
+                    } else {
+                        var style = { width: layoutBtn.width || '50%' };
+                        if (layoutBtn.color) style.color = layoutBtn.color;
+                        var bt = createScenarioButton(layoutBtn.name, style);
+                        var info = scenarioInfo(layoutBtn.name);
+                        if (bt && (!info || info.missing)) {
+                            // Show missing files with red text
+                            bt.style.color = 'red';
+                            bt.setAttribute('data-missing', 'true');
+                        }
+                    }
                 }
             }
+            // 'empty' is a blank line in the layout file: nothing to draw
         }
     }
 
@@ -623,34 +421,20 @@
 
     // Add diagnostic sections for missing/orphan files (only in test mode)
     function addDiagnosticSections() {
-        if (!pbsConfig.Enable_Test_Mode) return Promise.resolve();
+        if (!pbsConfig.Enable_Test_Mode) return;
 
         var adPanel = document.getElementById('adpanel2');
-        if (!adPanel) return Promise.resolve();
+        if (!adPanel) return;
 
-        // Find the first section header to insert before
-        var allBtns = adPanel.querySelectorAll('button');
-        var insertBefore = null;
-        for (var i = 0; i < allBtns.length; i++) {
-            if (allBtns[i].style.backgroundColor === 'lightblue' && allBtns[i].style.width === '100%') {
-                insertBefore = allBtns[i];
-                break;
-            }
-        }
+        var deltas = manifest.deltas || {};
+        var missing = deltas.missing || [];
+        var orphans = deltas.orphans || [];
+        var insertBefore = firstSectionHeader(adPanel);
 
-        // Add "Buttons missing PBS" section if there are any
-        if (missingPbsFiles.length > 0) {
-            var missingHeader = document.createElement('button');
-            missingHeader.textContent = 'MISSING PBS FILES (' + missingPbsFiles.length + ')';
-            missingHeader.style.width = '100%';
-            missingHeader.style.backgroundColor = 'lightsalmon';
-            missingHeader.style.color = 'black';
-            missingHeader.style.fontWeight = 'bold';
-            missingHeader.style.display = 'inline';
-            missingHeader.style.fontSize = '18px';
-            adPanel.insertBefore(missingHeader, insertBefore);
-
-            missingPbsFiles.forEach(function(name) {
+        // Referenced by the layout, but no scenario file
+        if (missing.length > 0) {
+            createToggleHeader('MISSING SCENARIO FILES (' + missing.length + ')', 'lightsalmon', 'data-missing-btn', insertBefore);
+            missing.forEach(function(name) {
                 var bt = document.createElement('button');
                 bt.textContent = name;
                 bt.style.backgroundColor = 'white';
@@ -662,97 +446,17 @@
                 bt.setAttribute('data-missing-btn', 'true');
                 adPanel.insertBefore(bt, insertBefore);
             });
-
-            missingHeader.onclick = function() {
-                var btns = adPanel.querySelectorAll('[data-missing-btn]');
-                for (var i = 0; i < btns.length; i++) {
-                    $(btns[i]).toggle();
-                }
-            };
         }
 
-        // Load beta files and find orphans
-        return loadReleaseFiles().then(function(releaseFiles) {
-            var orphans = releaseFiles.filter(function(name) {
-                return referencedScenarios.indexOf(name) === -1;
+        // A scenario file that no layout button points at
+        if (orphans.length > 0) {
+            createToggleHeader('ORPHAN SCENARIOS (' + orphans.length + ')', 'plum', 'data-orphan-btn', insertBefore);
+            orphans.forEach(function(name) {
+                var bt = createScenarioButton(name, { width: '50%', fontSize: '18px', color: 'purple' }, insertBefore);
+                bt.setAttribute('data-orphan-btn', 'true');
             });
-
-            if (orphans.length > 0) {
-                var orphanHeader = document.createElement('button');
-                orphanHeader.textContent = 'ORPHAN SCENARIOS (' + orphans.length + ')';
-                orphanHeader.style.width = '100%';
-                orphanHeader.style.backgroundColor = 'plum';
-                orphanHeader.style.color = 'black';
-                orphanHeader.style.fontWeight = 'bold';
-                orphanHeader.style.display = 'inline';
-                orphanHeader.style.fontSize = '18px';
-                adPanel.insertBefore(orphanHeader, insertBefore);
-
-                orphans.forEach(function(name) {
-                    var bt = document.createElement('button');
-                    bt.textContent = name.replace(/_/g, ' ');
-                    bt.style.backgroundColor = 'white';
-                    bt.style.color = 'purple';
-                    bt.style.textAlign = 'center';
-                    bt.style.display = 'inline';
-                    bt.style.fontSize = '18px';
-                    bt.style.width = '50%';
-                    bt.setAttribute('data-scenario', name);
-                    bt.setAttribute('data-orphan-btn', 'true');
-                    bt.setAttribute('data-pbs-url', PBS_RELEASE_BASE + '/' + name + '.pbs');
-                    adPanel.insertBefore(bt, insertBefore);
-
-                    // Load metadata for orphan buttons
-                    fetchPbsMetadata(name, PBS_RELEASE_BASE).then(function(meta) {
-                        bt.textContent = meta.text;
-                        if (meta.style.backgroundColor) bt.style.backgroundColor = meta.style.backgroundColor;
-                        if (meta.chat) {
-                            bt.setAttribute('data-chat', meta.chatRaw);
-                            var tooltipText = meta.chat.replace(/^\n?---\s*/, '').trim()
-                                .replace(/!S/g, '\u2660')
-                                .replace(/!H/g, '\u2665')
-                                .replace(/!D/g, '\u2666')
-                                .replace(/!C/g, '\u2663');
-                            bt.title = tooltipText;
-                        }
-                    });
-
-                    bt.onclick = function() {
-                        var scenarioName = this.getAttribute('data-scenario');
-                        var url = this.getAttribute('data-pbs-url');
-                        var chatText = this.getAttribute('data-chat');
-                        if (chatText) {
-                            setChatMessage(chatText, true);
-                        }
-                        fetch(url)
-                            .then(function(response) { return response.text(); })
-                            .then(function(content) {
-                                var match = content.match(/setDealerCode\(`([\s\S]*?)`,\s*"([NSEW])",\s*(true|false)\)/);
-                                if (match) {
-                                    window.currentPBSScenario = scenarioName;
-                                    // Extract convention-card-ns and convention-card-ew from dealer code comments
-                                    var ccNS = match[1].match(/convention-card-ns:\s*(\S+)/);
-                                    var ccEW = match[1].match(/convention-card-ew:\s*(\S+)/);
-                                    window.currentPBSConventionCardNS = ccNS ? ccNS[1] : null;
-                                    window.currentPBSConventionCardEW = ccEW ? ccEW[1] : null;
-                                    window.pbsShowHCP = true;
-                                    setDealerCode(match[1], match[2], match[3] === 'true');
-                                }
-                            })
-                            .catch(function(err) { console.error('PBS (orphan):', err); });
-                    };
-                });
-
-                orphanHeader.onclick = function() {
-                    var btns = adPanel.querySelectorAll('[data-orphan-btn]');
-                    for (var i = 0; i < btns.length; i++) {
-                        $(btns[i]).toggle();
-                    }
-                };
-
-                console.log('PBS Dynamic: Found', orphans.length, 'orphan scenarios');
-            }
-        });
+            console.log('PBS Dynamic: Found', orphans.length, 'orphan scenarios');
+        }
     }
 
     // Clear all dynamically created content
@@ -765,10 +469,6 @@
         while (adPanel.lastChild) {
             adPanel.removeChild(adPanel.lastChild);
         }
-
-        // Reset tracking arrays
-        referencedScenarios = [];
-        missingPbsFiles = [];
 
         console.log('PBS Dynamic: Cleared all dynamic content');
     }
@@ -829,28 +529,14 @@
         console.log('PBS Dynamic: Test mode =', pbsConfig.Enable_Test_Mode);
         console.log('PBS Dynamic: Beta layout =', pbsConfig.Use_Beta_Layout);
 
-        // Choose layout URL based on setting
-        var layoutUrl = pbsConfig.Use_Beta_Layout ? LAYOUT_BETA_URL : LAYOUT_RELEASE_URL;
-
-        // First render the layout (major header, action buttons, sections)
-        fetch(layoutUrl)
-            .then(function(response) { return response.text(); })
-            .then(function(layoutText) {
-                console.log('PBS Dynamic: Layout loaded,', layoutText.split('\n').length, 'lines');
-                renderLayout(layoutText);
-            })
-            .then(function() {
+        loadManifest(manifestTier())
+            .then(function(m) {
+                manifest = m;
+                console.log('PBS Dynamic: Manifest ' + m.tier + ' loaded (commit ' + String(m.generatedAtCommit).slice(0, 7) + '), ' + Object.keys(m.scenarios || {}).length + ' scenarios');
+                renderLayout(m.layout || []);
                 // Then insert test buttons after action buttons, before first section
-                return addTestModeButtons();
-            })
-            .then(function() {
-                // Wait a moment for metadata fetches to complete, then add diagnostic sections
-                return new Promise(function(resolve) { setTimeout(resolve, 2000); });
-            })
-            .then(function() {
-                return addDiagnosticSections();
-            })
-            .then(function() {
+                addTestModeButtons();
+                addDiagnosticSections();
                 // Set up expand/collapse after all buttons are rendered
                 setupExpandCollapse();
                 window._pbsDynamicBuilding = false;
