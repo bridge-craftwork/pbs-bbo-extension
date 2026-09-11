@@ -31,8 +31,8 @@ PBSCache (localStorage) contains:
   Javascript → stanmaz/BBOalert/.../Plugins/PBNcapture.js          (eval'd, registers events via addBBOalertEvent)
   Javascript → bridge-craftwork/bbo-pbs/.../Plugins/BBAcompare.js  (eval'd, registers events via addBBOalertEvent)
   Import  → stanmaz/BBOalert/.../Scripts/PBStooltips.js
-  Script,onDataLoad blocks → PBS Dynamic Layout system (fetches button layout + scenario metadata)
-  295 .pbs scenario files (fetched on button click, not at startup)
+  Script,onDataLoad blocks → PBS Dynamic Layout system (fetches manifest/manifest-<tier>.json)
+  dlr/<name>.dlr scenario files (fetched on button click, not at startup)
 ```
 
 `Import,` directives are included as data records. `Javascript,` directives are eval'd and can register event listeners.
@@ -135,13 +135,22 @@ The `_pbsDynamicBuilding = true` guard after `execUserScript` prevents `-PBS.txt
 
 PBS uses the Script system. BBAcompare.js and PBNcapture.js use the Event system.
 
-### PBS Dynamic Layout (-PBS.txt)
-The largest `Script,onDataLoad` block (~800 lines) is an IIFE that:
+### PBS Dynamic Layout (runtime/pbsDynamicLayout.js)
+The largest `Script,onDataLoad` block is an IIFE that:
 1. Reads config via `addConfigBox('PBS', pbsConfig)`
-2. Fetches button layout from GitHub (`-button-layout-release.txt` or `-button-layout-beta.txt`)
-3. Renders 295 scenario buttons with async metadata loading
-4. Optionally adds test mode buttons (pbs-test folder)
+2. Fetches **one** manifest from the PBS repo, `manifest/manifest-<tier>.json`. The two
+   toggles pick the tier: release (both off), beta (`Use_Beta_Layout`), test (both on),
+   release-test (`Enable_Test_Mode`). The manifest carries the parsed layout, every
+   scenario's button text/chat/alias/`gibWorks`/convention cards, and the missing/orphan deltas
+3. Renders the scenario buttons from it (lightpink where `gibWorks` is false)
+4. In test mode, adds the test scenarios and the missing/orphan sections
 5. Sets up expand/collapse behavior
+
+A click runs `loadScenario(name)`: send the chat, auto-start a table if at home, fetch
+`dlr/<name>.dlr` from PBS `main`, strip it, and call `setDealerCode(code, seat, true)`.
+The stripping (`dealerFromDlr`) is a port of `parse_dlr_file` + `bbo_dealer_code` in PBS's
+`build-scripts-mac/operations/pbs_from_dlr.py`; `node tools/check-dlr-strip.mjs` compares
+the two over every `.dlr` in a local PBS checkout. Run it after touching either side.
 
 Config change detection runs in a `Script,onAnyMutation` block, reading from `localStorage.getItem('BBOalertPlugin PBS')`.
 
