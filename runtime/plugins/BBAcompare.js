@@ -268,22 +268,28 @@ addBBOalertEvent("onDataLoad", function () {
         return "";
     }
 
+    // Suit symbols render small in Arial next to letters and digits, so draw
+    // them a size up. line-height 1 keeps them from making the row taller.
+    function suitGlyph(symbol, color) {
+        return '<span style="color: ' + color + '; font-size: 1.2em; line-height: 1;">' + symbol + '</span>';
+    }
+
     function formatSuitSymbols(text) {
         if (!text) return '';
         return text
-            .replace(/!S/gi, '<span style="color: #000;">♠</span>')
-            .replace(/!H/gi, '<span style="color: #d00;">♥</span>')
-            .replace(/!D/gi, '<span style="color: #d00;">♦</span>')
-            .replace(/!C/gi, '<span style="color: #000;">♣</span>');
+            .replace(/!S/gi, suitGlyph('♠', '#000'))
+            .replace(/!H/gi, suitGlyph('♥', '#d00'))
+            .replace(/!D/gi, suitGlyph('♦', '#d00'))
+            .replace(/!C/gi, suitGlyph('♣', '#000'));
     }
 
     function formatBidWithSymbols(bid) {
         if (!bid) return '';
         return bid
-            .replace(/S$/, '<span style="color: #000;">♠</span>')
-            .replace(/H$/, '<span style="color: #d00;">♥</span>')
-            .replace(/D$/, '<span style="color: #d00;">♦</span>')
-            .replace(/C$/, '<span style="color: #000;">♣</span>');
+            .replace(/S$/, suitGlyph('♠', '#000'))
+            .replace(/H$/, suitGlyph('♥', '#d00'))
+            .replace(/D$/, suitGlyph('♦', '#d00'))
+            .replace(/C$/, suitGlyph('♣', '#000'));
     }
 
     function getVulnerability() {
@@ -431,29 +437,29 @@ addBBOalertEvent("onDataLoad", function () {
 
         var html = `
             <strong style="display: block; margin-bottom: 5px;">Double-Dummy Analysis:</strong>
-            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 17px; line-height: 1.25;">
                 <thead>
                     <tr style="background: #f0f0f0;">
-                        <th style="border: 1px solid #ddd; padding: 4px;"></th>
-                        <th style="border: 1px solid #ddd; padding: 4px; color: #000;">♣</th>
-                        <th style="border: 1px solid #ddd; padding: 4px; color: #d00;">♦</th>
-                        <th style="border: 1px solid #ddd; padding: 4px; color: #d00;">♥</th>
-                        <th style="border: 1px solid #ddd; padding: 4px; color: #000;">♠</th>
-                        <th style="border: 1px solid #ddd; padding: 4px;">NT</th>
+                        <th style="border: 1px solid #ddd; padding: 3px 2px;"></th>
+                        <th style="border: 1px solid #ddd; padding: 3px 2px;">${suitGlyph('♣', '#000')}</th>
+                        <th style="border: 1px solid #ddd; padding: 3px 2px;">${suitGlyph('♦', '#d00')}</th>
+                        <th style="border: 1px solid #ddd; padding: 3px 2px;">${suitGlyph('♥', '#d00')}</th>
+                        <th style="border: 1px solid #ddd; padding: 3px 2px;">${suitGlyph('♠', '#000')}</th>
+                        <th style="border: 1px solid #ddd; padding: 3px 2px;">NT</th>
                     </tr>
                 </thead>
                 <tbody>`;
 
         for (var i = 0; i < seats.length; i++) {
             var seat = seats[i];
-            html += `<tr><td style="border: 1px solid #ddd; padding: 4px; font-weight: bold; text-align: center; background: #f9f9f9;">${seat}</td>`;
+            html += `<tr><td style="border: 1px solid #ddd; padding: 3px 2px; font-weight: bold; text-align: center; background: #f9f9f9;">${seat}</td>`;
 
             for (var j = 0; j < suitKeys.length; j++) {
                 var suitKey = suitKeys[j];
                 var tricks = dd[seat] ? dd[seat][suitKey] : '-';
                 if (tricks === undefined || tricks === null) tricks = '-';
 
-                var cellStyle = 'border: 1px solid #ddd; padding: 4px; text-align: center;';
+                var cellStyle = 'border: 1px solid #ddd; padding: 3px 2px; text-align: center;';
                 var isUserContract = userContract && userContract.declarer === seat && userContract.strain === suitKey;
                 var isBbaContract = bbaContract && bbaContract.declarer === seat && bbaContract.strain === suitKey;
 
@@ -724,7 +730,7 @@ addBBOalertEvent("onDataLoad", function () {
             padding-bottom: 5px;
             z-index: 10000;
             font-family: Arial, sans-serif;
-            font-size: 14px;
+            font-size: 16px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
         `;
 
@@ -743,12 +749,12 @@ addBBOalertEvent("onDataLoad", function () {
 
         panelTitleEl = document.createElement('strong');
         panelTitleEl.id = 'bba-panel-title';
-        panelTitleEl.style.fontSize = '16px';
+        panelTitleEl.style.fontSize = '19px';
         panelTitleEl.textContent = 'BBA Comparison';
 
         var closeBtn = document.createElement('button');
         closeBtn.id = 'bba-close-btn';
-        closeBtn.style.cssText = 'border:none;background:none;cursor:pointer;font-size:20px;color:#666;';
+        closeBtn.style.cssText = 'border:none;background:none;cursor:pointer;font-size:26px;line-height:1;color:#666;';
         closeBtn.innerHTML = '&times;';
         closeBtn.addEventListener('click', function() {
             closePanel();
@@ -847,7 +853,7 @@ addBBOalertEvent("onDataLoad", function () {
             <div style="padding: 20px; text-align: center; color: #666;">
                 <div style="font-size: 24px; margin-bottom: 10px;">⏳</div>
                 <div>Waiting for auction to complete...</div>
-                <div style="font-size: 12px; margin-top: 10px; color: #999;">
+                <div style="font-size: 14px; margin-top: 10px; color: #999;">
                     Comparison will appear automatically when bidding ends.
                 </div>
             </div>
@@ -891,19 +897,19 @@ addBBOalertEvent("onDataLoad", function () {
 
         // Summary message
         if (match) {
-            html += `<div style="padding: 10px; margin-bottom: 10px; border-radius: 4px; text-align: center; background: #d4edda; color: #155724;">
+            html += `<div style="padding: 8px 10px; margin-bottom: 8px; border-radius: 4px; text-align: center; background: #d4edda; color: #155724;">
                 BBA would have bid the same as you did.
             </div>`;
         } else {
             var yourBid = actualBids[firstDivergenceIndex] || '-';
             var bbaBid = expectedBids[firstDivergenceIndex] || '-';
-            html += `<div style="padding: 10px; margin-bottom: 10px; border-radius: 4px; text-align: center; background: #f8d7da; color: #721c24;">
+            html += `<div style="padding: 8px 10px; margin-bottom: 8px; border-radius: 4px; text-align: center; background: #f8d7da; color: #721c24;">
                 BBA would have bid <strong>${formatBidWithSymbols(bbaBid)}</strong> instead of <strong>${formatBidWithSymbols(yourBid)}</strong>.
             </div>`;
 
             // Convention info
             if (result.conventions) {
-                html += `<div style="font-size: 12px; color: #666; margin-bottom: 10px; text-align: center;">
+                html += `<div style="font-size: 14px; color: #666; margin-bottom: 8px; text-align: center;">
                     NS: ${result.conventions.ns} | EW: ${result.conventions.ew}
                 </div>`;
             }
@@ -916,13 +922,13 @@ addBBOalertEvent("onDataLoad", function () {
             var alerts = [];
             var alertIndex = 0;
 
-            html += `<table style="width: 100%; border-collapse: collapse; margin-bottom: 10px;">
+            html += `<table style="width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 20px; line-height: 1.25;">
                 <thead>
                     <tr style="background: #f0f0f0;">
-                        <th style="border: 1px solid #ddd; padding: 8px; width: 25%;">W</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; width: 25%;">N</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; width: 25%;">E</th>
-                        <th style="border: 1px solid #ddd; padding: 8px; width: 25%;">S</th>
+                        <th style="border: 1px solid #ddd; padding: 4px 2px; width: 25%; font-size: 18px;">W</th>
+                        <th style="border: 1px solid #ddd; padding: 4px 2px; width: 25%; font-size: 18px;">N</th>
+                        <th style="border: 1px solid #ddd; padding: 4px 2px; width: 25%; font-size: 18px;">E</th>
+                        <th style="border: 1px solid #ddd; padding: 4px 2px; width: 25%; font-size: 18px;">S</th>
                     </tr>
                 </thead>
                 <tbody>`;
@@ -940,7 +946,7 @@ addBBOalertEvent("onDataLoad", function () {
                 for (var j = 0; j < 4; j++) {
                     var cellData = paddedBids[i + j];
                     if (!cellData || cellData.bid === '') {
-                        html += '<td style="padding: 6px; text-align: center; border: 1px solid #ddd;"></td>';
+                        html += '<td style="padding: 3px 2px; text-align: center; border: 1px solid #ddd;"></td>';
                     } else {
                         var bid = cellData.bid;
                         var bidIndex = cellData.index;
@@ -955,10 +961,10 @@ addBBOalertEvent("onDataLoad", function () {
                         if (meaning) {
                             alertIndex++;
                             alerts.push({ num: alertIndex, bid: bid, meaning: meaning });
-                            alertSup = `<sup style="color: #d00; font-size: 10px;">${alertIndex}</sup>`;
+                            alertSup = `<sup style="color: #d00; font-size: 13px; line-height: 0;">${alertIndex}</sup>`;
                         }
 
-                        var style = 'padding: 6px; text-align: center; border: 1px solid #ddd;';
+                        var style = 'padding: 3px 2px; text-align: center; border: 1px solid #ddd;';
                         if (isFirstDiv) {
                             style += ' background: #fff3cd; font-weight: bold; border: 2px solid #ffc107;';
                         }
@@ -973,11 +979,11 @@ addBBOalertEvent("onDataLoad", function () {
 
             // Alerts legend
             if (alerts.length > 0) {
-                html += '<div style="font-size: 12px; border-top: 1px solid #ccc; padding-top: 10px;">';
+                html += '<div style="font-size: 16px; line-height: 1.3; border-top: 1px solid #ccc; padding-top: 10px;">';
                 html += '<strong style="display: block; margin-bottom: 5px;">Alerts:</strong>';
                 for (var a = 0; a < alerts.length; a++) {
                     html += `<div style="margin-bottom: 3px; padding-left: 5px;">
-                        <sup style="color: #d00;">${alerts[a].num}</sup> ${formatBidWithSymbols(alerts[a].bid)}: ${formatSuitSymbols(alerts[a].meaning)}
+                        <sup style="color: #d00; font-size: 12px; line-height: 0;">${alerts[a].num}</sup> ${formatBidWithSymbols(alerts[a].bid)}: ${formatSuitSymbols(alerts[a].meaning)}
                     </div>`;
                 }
                 html += '</div>';
@@ -987,7 +993,7 @@ addBBOalertEvent("onDataLoad", function () {
         // DD section
         html += `<div id="bba-dd-section" style="margin-top: 10px; border-top: 1px solid #ccc; padding-top: 10px;">
             <strong style="display: block; margin-bottom: 5px;">Double-Dummy Analysis:</strong>
-            <div style="font-size: 12px; color: #666; text-align: center; padding: 10px;">
+            <div style="font-size: 14px; color: #666; text-align: center; padding: 10px;">
                 Loading DD results...
             </div>
         </div>`;
@@ -1007,7 +1013,7 @@ addBBOalertEvent("onDataLoad", function () {
                     } else {
                         ddDiv.innerHTML = `
                             <strong style="display: block; margin-bottom: 5px;">Double-Dummy Analysis:</strong>
-                            <div style="font-size: 12px; color: #666; text-align: center; padding: 10px;">
+                            <div style="font-size: 14px; color: #666; text-align: center; padding: 10px;">
                                 DD results unavailable.
                             </div>
                         `;
