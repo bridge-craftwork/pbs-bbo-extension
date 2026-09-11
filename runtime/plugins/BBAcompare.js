@@ -431,7 +431,6 @@ addBBOalertEvent("onDataLoad", function () {
         if (!dd) return '';
 
         var suitKeys = ['C', 'D', 'H', 'S', 'NT'];
-        var seats = ['N', 'S', 'E', 'W'];
         var greenBg = '#d4edda', greenText = '#155724';
         var redBg = '#f8d7da', redText = '#721c24';
 
@@ -450,22 +449,34 @@ addBBOalertEvent("onDataLoad", function () {
                 </thead>
                 <tbody>`;
 
-        for (var i = 0; i < seats.length; i++) {
-            var seat = seats[i];
-            html += `<tr><td style="border: 1px solid #ddd; padding: 3px 2px; font-weight: bold; text-align: center; background: #f9f9f9;">${seat}</td>`;
+        function tricksFor(seat, suitKey) {
+            var tricks = dd[seat] ? dd[seat][suitKey] : '-';
+            return (tricks === undefined || tricks === null) ? '-' : tricks;
+        }
+
+        // Partners usually take the same tricks in every strain. When they do,
+        // show them as one row labelled NS or EW.
+        var rows = [];
+        [['N', 'S'], ['E', 'W']].forEach(function(pair) {
+            var same = suitKeys.every(function(k) { return tricksFor(pair[0], k) === tricksFor(pair[1], k); });
+            if (same) rows.push({ label: pair.join(''), seats: pair });
+            else rows.push({ label: pair[0], seats: [pair[0]] }, { label: pair[1], seats: [pair[1]] });
+        });
+
+        for (var i = 0; i < rows.length; i++) {
+            var row = rows[i];
+            html += `<tr><td style="border: 1px solid #ddd; padding: 3px 2px; font-weight: bold; text-align: center; background: #f9f9f9;">${row.label}</td>`;
 
             for (var j = 0; j < suitKeys.length; j++) {
                 var suitKey = suitKeys[j];
-                var tricks = dd[seat] ? dd[seat][suitKey] : '-';
-                if (tricks === undefined || tricks === null) tricks = '-';
+                var tricks = tricksFor(row.seats[0], suitKey);
 
                 var cellStyle = 'border: 1px solid #ddd; padding: 3px 2px; text-align: center;';
-                var isUserContract = userContract && userContract.declarer === seat && userContract.strain === suitKey;
-                var isBbaContract = bbaContract && bbaContract.declarer === seat && bbaContract.strain === suitKey;
+                var isUserContract = userContract && row.seats.indexOf(userContract.declarer) !== -1 && userContract.strain === suitKey;
+                var isBbaContract = bbaContract && row.seats.indexOf(bbaContract.declarer) !== -1 && bbaContract.strain === suitKey;
 
-                if (isUserContract && isBbaContract) {
-                    cellStyle += ` background: ${greenBg}; color: ${greenText}; font-weight: bold;`;
-                } else if (isUserContract) {
+                // Where both contracts land on one cell, the user's green wins
+                if (isUserContract) {
                     cellStyle += ` background: ${greenBg}; color: ${greenText}; font-weight: bold;`;
                 } else if (isBbaContract) {
                     cellStyle += ` background: ${redBg}; color: ${redText}; font-weight: bold;`;
