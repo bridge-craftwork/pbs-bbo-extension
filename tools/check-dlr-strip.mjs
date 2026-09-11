@@ -4,8 +4,8 @@
 //
 // runtime/pbsDynamicLayout.js fetches dlr/<name>.dlr and turns it into the
 // arguments for setDealerCode. That is a JavaScript port of parse_dlr_file and
-// bbo_dealer_code in PBS's build-scripts-mac/operations/pbs_from_dlr.py, so the
-// two can drift. This runs both over every .dlr in a local PBS checkout and
+// bbo_dealer_code in PBS's build-scripts-mac/bbo_dealer.py (formerly
+// operations/pbs_from_dlr.py), so the two can drift. This runs both over every .dlr in a local PBS checkout and
 // compares:
 //
 //   - dealer code and seat  against bbo_dealer_code (the pipeline's own Python)
@@ -41,7 +41,10 @@ const py = `
 import json, os, sys
 sys.path.insert(0, os.path.join(sys.argv[1], 'build-scripts-mac', 'operations'))
 sys.path.insert(0, os.path.join(sys.argv[1], 'build-scripts-mac'))
-from pbs_from_dlr import bbo_dealer_code
+try:
+    from bbo_dealer import bbo_dealer_code
+except ImportError:  # a PBS checkout from before PBS #325
+    from pbs_from_dlr import bbo_dealer_code
 out = {}
 d = os.path.join(sys.argv[1], 'dlr')
 for fn in sorted(os.listdir(d)):
