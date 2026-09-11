@@ -131,8 +131,10 @@
             // The newlines are the ones the .pbs put either side of the backticks
             code: '\n' + out.join('\n') + '\n',
             seat: seat,
-            // Chat in the form the manifest carries it: \n tokens, wide commas
-            chat: chat === null ? null : '\\n' + chat.replace(/, /g, '，').split('\n').join('\\n') + '\\n',
+            // Chat as setChatMessage takes it: \n tokens between lines. Commas stay
+            // plain - the wide ones in the manifest were only ever needed inside a
+            // BBOalert Button record, and BBO chat takes plain ones (tested live).
+            chat: chat === null ? null : '\\n' + chat.split('\n').join('\\n') + '\\n',
             conventionCardNS: meta['convention-card-ns'] || null,
             conventionCardEW: meta['convention-card-ew'] || null
         };
