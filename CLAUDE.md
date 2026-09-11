@@ -149,7 +149,7 @@ The largest `Script,onDataLoad` block is an IIFE that:
 A click runs `loadScenario(name)`: send the chat, auto-start a table if at home, fetch
 `dlr/<name>.dlr` from PBS `main`, strip it, and call `setDealerCode(code, seat, true)`.
 The stripping (`dealerFromDlr`) is a port of `parse_dlr_file` + `bbo_dealer_code` in PBS's
-`build-scripts-mac/operations/pbs_from_dlr.py`; `node tools/check-dlr-strip.mjs` compares
+`build-scripts-mac/bbo_dealer.py`; `node tools/check-dlr-strip.mjs` compares
 the two over every `.dlr` in a local PBS checkout. Run it after touching either side.
 
 Config change detection runs in a `Script,onAnyMutation` block, reading from `localStorage.getItem('BBOalertPlugin PBS')`.
