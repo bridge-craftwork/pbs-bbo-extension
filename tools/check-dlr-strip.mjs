@@ -4,14 +4,15 @@
 //
 // runtime/pbsDynamicLayout.js fetches dlr/<name>.dlr and turns it into the
 // arguments for setDealerCode. That is a JavaScript port of parse_dlr_file and
-// bbo_dealer_code in PBS's build-scripts-mac/operations/pbs_from_dlr.py, so the
-// two can drift. This runs both over every .dlr in a local PBS checkout and
+// bbo_dealer_code in PBS's build-scripts-mac/bbo_dealer.py (formerly
+// operations/pbs_from_dlr.py), so the two can drift. This runs both over every .dlr in a local PBS checkout and
 // compares:
 //
 //   - dealer code and seat  against bbo_dealer_code (the pipeline's own Python)
 //   - dealer code and seat  against pbs-release/<name>.pbs, while that folder
 //                           exists: what setDealerCode received before the switch
-//   - chat                  against manifest/manifest-release.json
+//   - chat                  against manifest/manifest-release.json, wide commas
+//                           counted as plain
 //
 //   node tools/check-dlr-strip.mjs [path-to-Practice-Bidding-Scenarios]
 //
@@ -41,7 +42,10 @@ const py = `
 import json, os, sys
 sys.path.insert(0, os.path.join(sys.argv[1], 'build-scripts-mac', 'operations'))
 sys.path.insert(0, os.path.join(sys.argv[1], 'build-scripts-mac'))
-from pbs_from_dlr import bbo_dealer_code
+try:
+    from bbo_dealer import bbo_dealer_code
+except ImportError:  # a PBS checkout from before PBS #325
+    from pbs_from_dlr import bbo_dealer_code
 out = {}
 d = os.path.join(sys.argv[1], 'dlr')
 for fn in sorted(os.listdir(d)):
@@ -57,6 +61,9 @@ const expected = JSON.parse(execFileSync('python3', ['-P', '-c', py, PBS],
 const manifestPath = join(PBS, 'manifest', 'manifest-release.json');
 const scenarios = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')).scenarios : {};
 const pbsRelease = join(PBS, 'pbs-release');
+// The manifest used to carry wide commas (，) because commas separated fields in a
+// BBOalert Button record; BBO chat takes plain ones. Compare either form.
+const plainCommas = (chat) => chat.replace(/\uFF0C/g, ', ');
 const WRAPPER = /setDealerCode\(`([\s\S]*?)`,\s*"([NSEW])",\s*(true|false)\)/;
 
 const failures = [];
@@ -79,7 +86,7 @@ for (const fn of readdirSync(join(PBS, 'dlr')).filter(f => f.endsWith('.dlr')).s
 
   const entry = scenarios[name];
   if (entry && entry.chat) {
-    if (got.chat !== entry.chat) failures.push(`${name}: chat differs from manifest-release.json`);
+    if (plainCommas(got.chat) !== plainCommas(entry.chat)) failures.push(`${name}: chat differs from manifest-release.json`);
     else counts.chat++;
   }
 }
