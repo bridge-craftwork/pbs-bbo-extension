@@ -35,6 +35,9 @@ What replaced it:
   unlike the positional `.eq(0..4)` they replaced. BBO has since inserted
   "Video chat" at index 0, so the old positional code was setting the *wrong*
   options even before it broke.
+  *Later reverted (issue #36):* setting them correctly locked kibitzers out and
+  hid the table, which users had not seen in years, so `startTable.js` now
+  leaves every option at BBO's default.
 
 **Also:** BBO now renders `Practice` / `Start a bidding table` on **two** surfaces
 (main nav and a right-hand drawer) with identical classes. On `/practice` the
