@@ -2,7 +2,7 @@
 // The point: a hard watchdog guarantees this process exits and writes a result
 // even if the page wedges, so a stalled browser never blocks the caller.
 import { chromium } from '/Users/rick/.npm/_npx/705bc6b22212b352/node_modules/playwright-core/index.mjs';
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
 import { pathToFileURL } from 'url';
 
 const arg = (n, d) => {
@@ -23,6 +23,29 @@ const PROFILE = arg('profile', '/Users/rick/.playwright-mcp/bbo-profile');
 // runtime/ than the one on disk. Get the hash from: node tools/stamp-runtime.mjs
 const EXPECT_BUILD = arg('expect-build');
 const EXT = '/Users/rick/.playwright-mcp/ext';
+// Which Chromium to launch. The bundled playwright-core expects a build that is
+// usually not installed, and pinning one build number broke the harness the
+// moment the MCP server updated (1243 -> 1244). So resolve it at launch:
+//   1. --chromium <path> or $PW_CHROMIUM, when a specific build is wanted
+//   2. the build playwright-core itself expects, if it happens to be installed
+//   3. the newest chromium-NNNN in the Playwright cache
+const PW_CACHE = '/Users/rick/Library/Caches/ms-playwright';
+const CHROME_IN_BUILD = 'chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
+function resolveChromium() {
+  const explicit = arg('chromium', process.env.PW_CHROMIUM);
+  if (explicit) {
+    if (!existsSync(explicit)) throw new Error('--chromium / PW_CHROMIUM does not exist: ' + explicit);
+    return explicit;
+  }
+  try { const own = chromium.executablePath(); if (existsSync(own)) return own; } catch {}
+  const builds = (existsSync(PW_CACHE) ? readdirSync(PW_CACHE) : [])
+    .map(d => /^chromium-(\d+)$/.exec(d)).filter(Boolean)
+    .map(m => ({ n: +m[1], path: PW_CACHE + '/' + m[0] + '/' + CHROME_IN_BUILD }))
+    .filter(b => existsSync(b.path))
+    .sort((a, b) => b.n - a.n);
+  if (!builds.length) throw new Error('no Chromium found in ' + PW_CACHE + ' - run: npx playwright install chromium');
+  return builds[0].path;
+}
 // PBS, BBOalert, Bridge Solver, BBO Extractor
 const ALL = { pbs:      'bfgapanhaiakopfngbjiapbcgdgojoed',
               bboalert: 'bjgihidachainhhhilkeemegdhehnlcf',
@@ -82,12 +105,12 @@ watchdog.unref?.();
 let ctx;
 try {
   say('launching with extensions: ' + names.join(', '));
+  const CHROMIUM = resolveChromium();
+  say('chromium: ' + CHROMIUM.replace(PW_CACHE + '/', '').split('/')[0]);
   say('password manager: ' + disablePasswordManager(PROFILE));
   ctx = await chromium.launchPersistentContext(PROFILE, {
     headless: false,
-    // Pinned: the bundled playwright-core expects a chromium build that is
-    // not installed. Use the same one the MCP server drives.
-    executablePath: '/Users/rick/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
+    executablePath: CHROMIUM,
     args: [`--disable-extensions-except=${paths}`, `--load-extension=${paths}`,
            '--disable-blink-features=AutomationControlled',
            // belt and braces alongside the profile prefs above

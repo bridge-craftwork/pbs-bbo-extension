@@ -49,6 +49,7 @@ node pwrun.mjs --test ./mytest.mjs --out /tmp/out.json \
 | `--timeout N` | seconds. A **hard watchdog** writes the result and names the step even if the page wedges, so a hung tab never blocks you |
 | `--keep-open` | leave the browser up afterwards to poke at by hand. The result file is still written on time, so poll for the file, not for the process |
 | `--net` | log non-static requests, so a GUI flow reveals the endpoints behind it |
+| `--chromium <path>` | launch this Chromium (or set `PW_CHROMIUM`). Otherwise the newest `chromium-NNNN` in the Playwright cache is used; the run logs which |
 
 A test is a module exporting `default async ({ page, ctx, say })`. Use `say()`
 rather than `console.log` so the line lands in the result file.
