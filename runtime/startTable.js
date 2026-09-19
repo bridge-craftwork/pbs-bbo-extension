@@ -46,23 +46,19 @@ window.startTable = function(type, opts) {
     // the positional .eq(2) it replaces.
     var START_TABLE_BUTTON = "bbo-sticky-bottom-create button.primary";
 
-    // Table options PBS wants, recovered from the pre-Phoenix comments in
-    // 2f76b1a1 (2024-03-09): a private, invisible table nobody can join or
-    // kibitz uninvited. Keyed by BBO's stable input ids, which are language- and
-    // order-independent; the old positional .eq(0..4) silently set the wrong
-    // options once BBO inserted "Video chat" at index 0. "video-chat" is
-    // deliberately absent - it postdates PBS's intent, so BBO's default stands.
+    // Table options are deliberately left at BBO's defaults - do not set them.
     //
-    // Note: BBO does not persist permission-required-to-kibitz while
-    // allow-kibitzers is false - it reads back false on the created table,
-    // apparently normalised away as moot. Net effect matches the intent.
-    var TABLE_OPTIONS = {
-        "allow-kibitzers": false,
-        "allow-kibitzers-chat": false,
-        "permission-required-to-kibitz": true,
-        "permission-required-to-play": true,
-        "invisible-table": true
-    };
+    // 2f76b1a1 (2024-03-09) meant to make a private, invisible table nobody
+    // could kibitz, by clicking the toggles by position. That never held for
+    // long: BBO inserted "Video chat" at index 0 and the clicks landed on the
+    // wrong options, then Phoenix removed the markup and they matched nothing.
+    // Users therefore spent years on BBO's defaults - kibitzers and their chat
+    // allowed, table visible - and when the Phoenix fix applied the 2024 intent
+    // correctly by input id, they reported it as a regression (issue #36).
+    //
+    // Defaults also cannot break when BBO next reworks this panel. Measured,
+    // BBO does not remember the last table's options: the modal opens on its
+    // defaults every time, so there is no stale choice to override either.
 
     // Find a BBO navigation button without depending on the interface language.
     // Tried in order, most trustworthy first:
@@ -89,21 +85,6 @@ window.startTable = function(type, opts) {
                      + ' - falling back to position ' + index + ' of ' + btns.length
                      + ' in ' + hostTag + '. BBO may have changed its markup.');
         return btns.eq(index);
-    }
-
-    // Set each toggle TO a state rather than blind-toggling, so re-running is
-    // idempotent and a changed BBO default cannot invert the intent. Clicking the
-    // real <input> is what propagates into Angular's reactive form.
-    function setTableOptions() {
-        var missing = [];
-        Object.keys(TABLE_OPTIONS).forEach(function (id) {
-            var el = BBOcontext().getElementById(id);
-            if (!el) { missing.push(id); return; }
-            if (el.checked !== TABLE_OPTIONS[id]) el.click();
-        });
-        if (missing.length) {
-            console.warn("[PBS] table option toggles not found (BBO UI change?): " + missing.join(", "));
-        }
     }
 
     // --- Seating -------------------------------------------------------------
@@ -266,7 +247,6 @@ window.startTable = function(type, opts) {
         .then(() => waitFor(() => navButton(NAV_LARGE, startBtnText, startBtnIcon, startBtnIndex).length > 0))
         .then(() => navButton(NAV_LARGE, startBtnText, startBtnIcon, startBtnIndex).click())
         .then(() => waitFor(() => $("bbo-create-table-modal", BBOcontext()).length > 0))
-        .then(() => setTableOptions())
         .then(() => waitFor(() => $(START_TABLE_BUTTON, BBOcontext()).length > 0))
         .then(() => clickNative(START_TABLE_BUTTON))
         .then(() => waitFor(() => $("bridge-screen .nameDisplayClass", BBOcontext()).length > 0))
