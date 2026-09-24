@@ -1,14 +1,67 @@
 // Background Playwright harness.
 // The point: a hard watchdog guarantees this process exits and writes a result
 // even if the page wedges, so a stalled browser never blocks the caller.
-import { chromium } from '/Users/rick/.npm/_npx/705bc6b22212b352/node_modules/playwright-core/index.mjs';
 import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
 import { pathToFileURL } from 'url';
+import { homedir } from 'os';
+import { createRequire } from 'module';
 
 const arg = (n, d) => {
   const i = process.argv.indexOf('--' + n);
   return i > -1 ? process.argv[i + 1] : d;
 };
+
+// Everything this harness needs lives outside the repo -- a Chromium, a browser
+// profile signed in to BBO, the unpacked extensions, playwright-core itself --
+// and all four used to be written down as one person's home directory. Each is
+// now a name with a per-user default, so a second Mac needs no edits to this
+// file: HOME resolves the defaults, and a flag or env var overrides any of them.
+const HOME = homedir();
+const PW_CACHE = process.env.PW_CACHE || HOME + '/Library/Caches/ms-playwright';
+
+// --check reports what this machine has and exits, launching neither a browser
+// nor a BBO session. It is the first thing to run on a Mac that has not done
+// this before: none of what it checks is in the repo, so "it works here" says
+// nothing about anywhere else.
+const CHECK = process.argv.includes('--check');
+
+// playwright-core is not a dependency of this repo -- nothing here is npm
+// installed -- so it is found rather than imported by name. The copy npx leaves
+// behind when the Playwright MCP server runs is the one these Macs already
+// have; its directory is a content hash, so it is searched for, not named.
+const require_ = createRequire(import.meta.url);
+function resolvePlaywrightCore() {
+  const explicit = arg('playwright-core', process.env.PW_CORE);
+  if (explicit) {
+    if (!existsSync(explicit)) throw new Error('--playwright-core / PW_CORE does not exist: ' + explicit);
+    return explicit;
+  }
+  try { return require_.resolve('playwright-core'); } catch {}
+  const npx = HOME + '/.npm/_npx';
+  if (existsSync(npx)) {
+    for (const dir of readdirSync(npx)) {
+      for (const entry of ['index.mjs', 'index.js']) {
+        const p = `${npx}/${dir}/node_modules/playwright-core/${entry}`;
+        if (existsSync(p)) return p;
+      }
+    }
+  }
+  throw new Error(
+    'playwright-core not found. Install it (npm i -g playwright-core) or point PW_CORE ' +
+    'at a copy. Running the Playwright MCP server once also leaves one in ~/.npm/_npx.');
+}
+
+let PW_CORE = null, coreError = null;
+try { PW_CORE = resolvePlaywrightCore(); } catch (e) { if (!CHECK) throw e; coreError = e.message; }
+
+// A CJS resolution usually gives named exports through the module lexer, but
+// not always; take either shape.
+let chromium = null;
+if (PW_CORE) {
+  const pwCore = await import(pathToFileURL(PW_CORE).href);
+  chromium = pwCore.chromium || pwCore.default?.chromium;
+  if (!CHECK && !chromium) throw new Error('playwright-core at ' + PW_CORE + ' exports no chromium');
+}
 const OUT = arg('out', '/tmp/pwrun.json');
 const TEST = arg('test');
 const TIMEOUT = parseInt(arg('timeout', '45'), 10) * 1000;
@@ -18,18 +71,17 @@ const TIMEOUT = parseInt(arg('timeout', '45'), 10) * 1000;
 const KEEP_OPEN = process.argv.includes('--keep-open');
 // --profile lets a run use a second, slim profile so it does not contend with
 // a browser already open on the main one.
-const PROFILE = arg('profile', '/Users/rick/.playwright-mcp/bbo-profile');
+const PROFILE = arg('profile', process.env.PBS_BBO_PROFILE || HOME + '/.playwright-mcp/bbo-profile');
 // --expect-build <hash>  fail the run if the page loaded a different revision of
 // runtime/ than the one on disk. Get the hash from: node tools/stamp-runtime.mjs
 const EXPECT_BUILD = arg('expect-build');
-const EXT = '/Users/rick/.playwright-mcp/ext';
+const EXT = arg('ext', process.env.PBS_BBO_EXT || HOME + '/.playwright-mcp/ext');
 // Which Chromium to launch. The bundled playwright-core expects a build that is
 // usually not installed, and pinning one build number broke the harness the
 // moment the MCP server updated (1243 -> 1244). So resolve it at launch:
 //   1. --chromium <path> or $PW_CHROMIUM, when a specific build is wanted
 //   2. the build playwright-core itself expects, if it happens to be installed
 //   3. the newest chromium-NNNN in the Playwright cache
-const PW_CACHE = '/Users/rick/Library/Caches/ms-playwright';
 const CHROME_IN_BUILD = 'chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
 function resolveChromium() {
   const explicit = arg('chromium', process.env.PW_CHROMIUM);
@@ -59,6 +111,26 @@ let names = only ? only.split(',') : Object.keys(ALL);
 names = names.filter(n => !without.includes(n));
 const IDS = names.map(n => ALL[n]).filter(Boolean);
 const paths = IDS.map(i => EXT + '/' + i).join(',');
+
+if (CHECK) {
+  const line = (ok, label, detail) =>
+    console.log(`  ${ok ? 'OK     ' : 'MISSING'}  ${label.padEnd(15)} ${detail}`);
+  let chromiumPath = null, chromiumError = null;
+  try { chromiumPath = resolveChromium(); } catch (e) { chromiumError = e.message; }
+  const profileOk = existsSync(PROFILE) && readdirSync(PROFILE).length > 0;
+  const missingExt = names.filter(n => !existsSync(EXT + '/' + ALL[n]));
+
+  console.log('pwrun.mjs --check: nothing is launched, no BBO session is opened.');
+  line(!!PW_CORE, 'playwright-core', PW_CORE || coreError);
+  line(!!chromiumPath, 'chromium', chromiumPath || chromiumError);
+  line(profileOk, 'BBO profile', PROFILE + (profileOk ? '' : '  (sign in to BBO once in this profile)'));
+  line(missingExt.length === 0, 'extensions',
+       missingExt.length ? `${EXT} lacks: ${missingExt.join(', ')}` : `${names.join(', ')} in ${EXT}`);
+
+  const ready = PW_CORE && chromiumPath && profileOk && !missingExt.length;
+  console.log(ready ? '\nReady.' : '\nNot ready. See docs/testing-with-playwright.md.');
+  process.exit(ready ? 0 : 1);
+}
 
 const log = [];
 

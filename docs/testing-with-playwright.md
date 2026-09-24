@@ -32,6 +32,36 @@ Cache-bust `curl` checks with a query string (`?cb=$RANDOM`), and prefer a
 **fresh branch name** when testing a data file — a URL nobody has fetched cannot
 be stale.
 
+## Setting up on another Mac
+
+Nothing the harness needs is in this repo: a Chromium, a browser profile signed
+in to BBO, the unpacked extensions, and playwright-core all live in your home
+directory. `pwrun.mjs` resolves each from `HOME`, so no file needs editing —
+but the four have to exist. Ask it what is missing:
+
+```bash
+node test/playwright/pwrun.mjs --check      # launches nothing, opens no BBO session
+```
+
+It prints OK or MISSING for each, and exits non-zero until all four are there.
+To fill them in:
+
+| missing | fix |
+|---|---|
+| playwright-core | `npm i -g playwright-core`, or set `PW_CORE`. Running the Playwright MCP server once also leaves a copy in `~/.npm/_npx`, which is found automatically |
+| chromium | `npx playwright install chromium` |
+| extensions | install them in Chrome as usual, then run `test/playwright/refresh-extensions.sh`, which symlinks them into `~/.playwright-mcp/ext/`. Needs `jq` |
+| BBO profile | sign in to BBO once in that profile, with **your own** account — two sessions on one account knock each other off |
+
+Each default can be overridden: `--profile`, `--ext`, `--chromium`,
+`--playwright-core`, or `PBS_BBO_PROFILE`, `PBS_BBO_EXT`, `PW_CHROMIUM`,
+`PW_CORE`, `PW_CACHE`.
+
+The Practice-Bidding-Scenarios pipeline drives this harness for its `gib` and
+`bbo-demo` operations, and looks for it at
+`~/Development/GitHub/pbs-bbo-extension/test/playwright/pwrun.mjs`. Cloned
+elsewhere, point `PBS_PWRUN` at your copy.
+
 ## Running a test
 
 ```bash
