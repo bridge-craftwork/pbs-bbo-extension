@@ -118,7 +118,7 @@ if (CHECK) {
   let chromiumPath = null, chromiumError = null;
   try { chromiumPath = resolveChromium(); } catch (e) { chromiumError = e.message; }
   const profileOk = existsSync(PROFILE) && readdirSync(PROFILE).length > 0;
-  const missingExt = names.filter(n => !existsSync(EXT + '/' + ALL[n]));
+  const missingExt = names.filter(n => !existsSync(EXT + '/' + ALL[n] + '/manifest.json'));
 
   console.log('pwrun.mjs --check: nothing is launched, no BBO session is opened.');
   line(!!PW_CORE, 'playwright-core', PW_CORE || coreError);
@@ -159,13 +159,33 @@ let dialogs = [];
 const say = m => { log.push(`[${new Date().toISOString().slice(11,19)}] ${m}`); };
 const finish = (status, extra = {}) => {
   try { writeFileSync(OUT, JSON.stringify({ status, log, keptOpen: KEEP_OPEN, ...extra }, null, 2)); } catch {}
-  if (KEEP_OPEN) {
+  // --keep-open parks so the browser stays up to be used. There is nothing to
+  // keep open if the run failed -- on a setup error the browser was never
+  // launched -- and parking then leaves a process claiming a window that does
+  // not exist, for the next run to clean up.
+  if (KEEP_OPEN && status === 'ok') {
     console.log('[harness] result written; browser left open. kill ' + process.pid + ' to close it.');
     setInterval(() => {}, 1 << 30);   // park forever, browser stays up
     return;
   }
   process.exit(status === 'ok' ? 0 : 2);
 };
+
+// An extension path that does not exist makes Chrome raise a blocking modal --
+// "Manifest file is missing or unreadable" -- which flashes in the Dock, waits
+// for a click nobody is there to give, and leaves BBO open with none of our
+// code in it. The symlinks under ext/ point into a Chrome profile and go stale
+// whenever an extension updates, so this is a normal condition, not a rarity.
+// Say so before launching, and name the script that fixes it.
+const brokenExt = names.filter(n => !existsSync(EXT + '/' + ALL[n] + '/manifest.json'));
+if (brokenExt.length) {
+  say(`extensions missing or stale: ${brokenExt.join(', ')} (looked in ${EXT})`);
+  say('fix: run test/playwright/refresh-extensions.sh, then node pwrun.mjs --check');
+  finish('error', { error:
+    `no manifest for: ${brokenExt.join(', ')} under ${EXT}. ` +
+    'Run test/playwright/refresh-extensions.sh to repoint the symlinks at the ' +
+    'extensions in your Chrome profile, then check with: node pwrun.mjs --check' });
+}
 
 // Watchdog: fires no matter what the page is doing.
 const watchdog = setTimeout(() => {
