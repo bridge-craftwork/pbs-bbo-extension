@@ -2,7 +2,8 @@
 // The point: a hard watchdog guarantees this process exits and writes a result
 // even if the page wedges, so a stalled browser never blocks the caller.
 import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
-import { pathToFileURL } from 'url';
+import { pathToFileURL, fileURLToPath } from 'url';
+import { dirname, resolve as resolvePath } from 'path';
 import { homedir } from 'os';
 import { createRequire } from 'module';
 
@@ -110,7 +111,23 @@ const without = (arg('without') || '').split(',').filter(Boolean);
 let names = only ? only.split(',') : Object.keys(ALL);
 names = names.filter(n => !without.includes(n));
 const IDS = names.map(n => ALL[n]).filter(Boolean);
-const paths = IDS.map(i => EXT + '/' + i).join(',');
+// Where each extension is loaded from. The symlinks under ext/ point into a
+// Chrome profile and cover an extension installed from the Web Store. The PBS
+// extension is also *in this repo*, unpacked and loadable as it stands, which
+// is what a machine testing repo code wants and what a machine that has never
+// run refresh-extensions.sh has anyway -- so fall back to it. A link under
+// ext/ still wins, so a setup that already works keeps loading what it loaded.
+const REPO_ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const extSource = (name) => {
+  const linked = EXT + '/' + ALL[name];
+  if (existsSync(linked + '/manifest.json')) return { path: linked, from: 'ext' };
+  if (name === 'pbs' && existsSync(REPO_ROOT + '/src/manifest.json')) {
+    return { path: REPO_ROOT + '/src', from: 'repo' };
+  }
+  return null;
+};
+const sources = names.map(n => [n, extSource(n)]);
+const paths = sources.filter(([, src]) => src).map(([, src]) => src.path).join(',');
 
 if (CHECK) {
   const line = (ok, label, detail) =>
@@ -118,14 +135,16 @@ if (CHECK) {
   let chromiumPath = null, chromiumError = null;
   try { chromiumPath = resolveChromium(); } catch (e) { chromiumError = e.message; }
   const profileOk = existsSync(PROFILE) && readdirSync(PROFILE).length > 0;
-  const missingExt = names.filter(n => !existsSync(EXT + '/' + ALL[n] + '/manifest.json'));
+  const missingExt = sources.filter(([, src]) => !src).map(([n]) => n);
+  const loadedFrom = sources.filter(([, src]) => src)
+    .map(([n, src]) => `${n}${src.from === 'repo' ? ' (this repo\'s src/)' : ''}`);
 
   console.log('pwrun.mjs --check: nothing is launched, no BBO session is opened.');
   line(!!PW_CORE, 'playwright-core', PW_CORE || coreError);
   line(!!chromiumPath, 'chromium', chromiumPath || chromiumError);
   line(profileOk, 'BBO profile', PROFILE + (profileOk ? '' : '  (sign in to BBO once in this profile)'));
   line(missingExt.length === 0, 'extensions',
-       missingExt.length ? `${EXT} lacks: ${missingExt.join(', ')}` : `${names.join(', ')} in ${EXT}`);
+       missingExt.length ? `${EXT} lacks: ${missingExt.join(', ')}` : loadedFrom.join(', '));
 
   const ready = PW_CORE && chromiumPath && profileOk && !missingExt.length;
   console.log(ready ? '\nReady.' : '\nNot ready. See docs/testing-with-playwright.md.');
@@ -177,7 +196,7 @@ const finish = (status, extra = {}) => {
 // code in it. The symlinks under ext/ point into a Chrome profile and go stale
 // whenever an extension updates, so this is a normal condition, not a rarity.
 // Say so before launching, and name the script that fixes it.
-const brokenExt = names.filter(n => !existsSync(EXT + '/' + ALL[n] + '/manifest.json'));
+const brokenExt = sources.filter(([, src]) => !src).map(([n]) => n);
 if (brokenExt.length) {
   say(`extensions missing or stale: ${brokenExt.join(', ')} (looked in ${EXT})`);
   say('fix: run test/playwright/refresh-extensions.sh, then node pwrun.mjs --check');

@@ -40,8 +40,13 @@ directory. `pwrun.mjs` resolves each from `HOME`, so no file needs editing —
 but the four have to exist. Ask it what is missing:
 
 ```bash
-node test/playwright/pwrun.mjs --check      # launches nothing, opens no BBO session
+node test/playwright/pwrun.mjs --check                 # all four extensions
+node test/playwright/pwrun.mjs --check --only pbs      # what gib and bbo-demo load
 ```
+
+Neither launches anything or opens a BBO session. Pass the same `--only` the
+run will use: `gib` and `bbo-demo` load the PBS extension alone, so a plain
+`--check` reporting the other three missing does not mean they are blocked.
 
 It prints OK or MISSING for each, and exits non-zero until all four are there.
 To fill them in:
@@ -50,8 +55,8 @@ To fill them in:
 |---|---|
 | playwright-core | `npm i -g playwright-core`, or set `PW_CORE`. Running the Playwright MCP server once also leaves a copy in `~/.npm/_npx`, which is found automatically |
 | chromium | `npx playwright install chromium` |
-| extensions | install them in Chrome as usual, then run `test/playwright/refresh-extensions.sh`, which symlinks them into `~/.playwright-mcp/ext/`. Needs `jq` |
-| BBO profile | sign in to BBO once in that profile, with **your own** account — two sessions on one account knock each other off |
+| extensions | the PBS extension needs nothing: with no link under `ext/`, the harness loads this repo's own `src/`, so a `git pull` is the only update. The other three are Chrome installs — run `test/playwright/refresh-extensions.sh` to symlink them into `~/.playwright-mcp/ext/` (needs `jq`), and note it sees only Web Store installs, not unpacked ones |
+| BBO profile | sign in to BBO once in that profile, with **your own** account — two sessions on one account knock each other off. If your signed-in profile is the everyday `bbo-profile` rather than `bbo-profile-test`, set `PBS_BBO_PROFILE` to it; `gib_capture.py` reads the same variable |
 
 Each default can be overridden: `--profile`, `--ext`, `--chromium`,
 `--playwright-core`, or `PBS_BBO_PROFILE`, `PBS_BBO_EXT`, `PW_CHROMIUM`,

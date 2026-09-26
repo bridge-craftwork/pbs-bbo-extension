@@ -66,9 +66,17 @@ missing=()
 for row in "${EXTENSIONS[@]}"; do
   id="${row%%	*}"
   name="${row#*	}"
-  # Most recent version subdir by mtime.
-  ver_dir=$(ls -td "$CHROME_EXT_DIR/$id"/*/ 2>/dev/null | head -1 || true)
+  # Most recent version subdir by mtime. Only a Web Store install lives here:
+  # an extension loaded unpacked from a checkout is not in this directory at
+  # all, which is not an error -- see the note printed when none resolve.
   link="$LINK_DIR/$id"
+  if [ ! -d "$CHROME_EXT_DIR/$id" ]; then
+    ver_dir=""
+    why="not installed in Chrome"
+  else
+    ver_dir=$(ls -td "$CHROME_EXT_DIR/$id"/*/ | head -1)
+    why="no version folder with a manifest"
+  fi
   if [ -n "$ver_dir" ] && [ -f "${ver_dir%/}/manifest.json" ]; then
     ver_dir="${ver_dir%/}"
     ver=$(basename "$ver_dir")
@@ -76,7 +84,7 @@ for row in "${EXTENSIONS[@]}"; do
     printf '  %-32s %-12s %s\n' "$name" "$ver" "OK -> ext/$id"
     paths+=("$link")
   else
-    printf '  %-32s %-12s %s\n' "$name" "-" "MISSING (skipped)"
+    printf '  %-32s %-12s %s\n' "$name" "-" "MISSING: $why"
     missing+=("$name ($id)")
     rm -f "$link"                # drop any dangling link so Chrome won't choke
   fi
@@ -84,6 +92,12 @@ done
 
 if [ "${#paths[@]}" -eq 0 ]; then
   echo "No extensions resolved — refusing to write empty config." >&2
+  echo >&2
+  echo "This script writes config.json for the Playwright MCP server, and sees" >&2
+  echo "only extensions installed from the Chrome Web Store. The PBS test" >&2
+  echo "harness does not depend on it: pwrun.mjs loads the PBS extension from" >&2
+  echo "this repo's src/ when no link exists. Check that instead:" >&2
+  echo "    node test/playwright/pwrun.mjs --check --only pbs" >&2
   exit 1
 fi
 
