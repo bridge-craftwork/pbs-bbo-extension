@@ -109,8 +109,17 @@ window.toggleRandomlyRotate = function () {
                     $("modal-content div:contains('高级')", parent.window.document).trigger("click");
                     break;
                 case 3:
-                    // Toggle "Randomly rotate" checkbox
-                    $("modal-content mat-checkbox:first .mat-checkbox-input", parent.window.document).trigger("click");
+                    // Set "Randomly rotate" to match the new state - never blindly
+                    // flip it. BBO's checkbox need not agree with the stored
+                    // preference (at the start of a session the preference is
+                    // restored but BBO's dialog keeps its own state), and a blind
+                    // click then leaves the checkbox OPPOSITE to the new state.
+                    // syncRotateFromDialog reads the checkbox when the dialog
+                    // closes and wrote that back as the preference, silently
+                    // undoing the toggle a couple of seconds later (issue #40).
+                    if ($("modal-content mat-checkbox:first", parent.window.document).hasClass("mat-checkbox-checked") != window.pbsRotateDeals) {
+                        $("modal-content mat-checkbox:first .mat-checkbox-input", parent.window.document).trigger("click");
+                    }
                     break;
                 case 4:
                     // Close dialog
