@@ -32,6 +32,41 @@ Cache-bust `curl` checks with a query string (`?cb=$RANDOM`), and prefer a
 **fresh branch name** when testing a data file — a URL nobody has fetched cannot
 be stale.
 
+## Setting up on another Mac
+
+Nothing the harness needs is in this repo: a Chromium, a browser profile signed
+in to BBO, the unpacked extensions, and playwright-core all live in your home
+directory. `pwrun.mjs` resolves each from `HOME`, so no file needs editing —
+but the four have to exist. Ask it what is missing:
+
+```bash
+node test/playwright/pwrun.mjs --check                 # all four extensions
+node test/playwright/pwrun.mjs --check --only pbs      # what gib and bbo-demo load
+```
+
+Neither launches anything or opens a BBO session. Pass the same `--only` the
+run will use: `gib` and `bbo-demo` load the PBS extension alone, so a plain
+`--check` reporting the other three missing does not mean they are blocked.
+
+It prints OK or MISSING for each, and exits non-zero until all four are there.
+To fill them in:
+
+| missing | fix |
+|---|---|
+| playwright-core | `npm i -g playwright-core`, or set `PW_CORE`. Running the Playwright MCP server once also leaves a copy in `~/.npm/_npx`, which is found automatically |
+| chromium | `npx playwright install chromium` |
+| extensions | the PBS extension needs nothing: with no link under `ext/`, the harness loads this repo's own `src/`, so a `git pull` is the only update. The other three are Chrome installs — run `test/playwright/refresh-extensions.sh` to symlink them into `~/.playwright-mcp/ext/` (needs `jq`), and note it sees only Web Store installs, not unpacked ones |
+| BBO profile | sign in to BBO once in that profile, with **your own** account — two sessions on one account knock each other off. If your signed-in profile is the everyday `bbo-profile` rather than `bbo-profile-test`, set `PBS_BBO_PROFILE` to it; `gib_capture.py` reads the same variable |
+
+Each default can be overridden: `--profile`, `--ext`, `--chromium`,
+`--playwright-core`, or `PBS_BBO_PROFILE`, `PBS_BBO_EXT`, `PW_CHROMIUM`,
+`PW_CORE`, `PW_CACHE`.
+
+The Practice-Bidding-Scenarios pipeline drives this harness for its `gib` and
+`bbo-demo` operations, and looks for it at
+`~/Development/GitHub/pbs-bbo-extension/test/playwright/pwrun.mjs`. Cloned
+elsewhere, point `PBS_PWRUN` at your copy.
+
 ## Running a test
 
 ```bash
@@ -49,6 +84,7 @@ node pwrun.mjs --test ./mytest.mjs --out /tmp/out.json \
 | `--timeout N` | seconds. A **hard watchdog** writes the result and names the step even if the page wedges, so a hung tab never blocks you |
 | `--keep-open` | leave the browser up afterwards to poke at by hand. The result file is still written on time, so poll for the file, not for the process |
 | `--net` | log non-static requests, so a GUI flow reveals the endpoints behind it |
+| `--chromium <path>` | launch this Chromium (or set `PW_CHROMIUM`). Otherwise the newest `chromium-NNNN` in the Playwright cache is used; the run logs which |
 
 A test is a module exporting `default async ({ page, ctx, say })`. Use `say()`
 rather than `console.log` so the line lands in the result file.

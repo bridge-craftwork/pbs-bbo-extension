@@ -5,7 +5,7 @@
 // can prove the browser loaded the revision it is being asked to verify rather
 // than a copy the CDN held back. See docs/testing-with-playwright.md.
 window.pbsRuntimeBuild = {
-    combined: "73ae3835",
+    combined: "912d0aa1",
     files: {
             "activeWatcher.js": "ed8bd27c",
             "chatDestination.js": "a4854ebf",
@@ -21,7 +21,7 @@ window.pbsRuntimeBuild = {
             "setDealerCode-polling.js": "67f53d85",
             "startTable.js": "98c768c5",
             "tabDelegation.js": "a86c1059",
-            "toggleRotate.js": "b345ad09"
+            "toggleRotate.js": "0272296f"
 }
 };
 console.log("[PBS] runtime build " + window.pbsRuntimeBuild.combined

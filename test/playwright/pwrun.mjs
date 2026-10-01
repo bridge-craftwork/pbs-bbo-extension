@@ -1,14 +1,68 @@
 // Background Playwright harness.
 // The point: a hard watchdog guarantees this process exits and writes a result
 // even if the page wedges, so a stalled browser never blocks the caller.
-import { chromium } from '/Users/rick/.npm/_npx/705bc6b22212b352/node_modules/playwright-core/index.mjs';
-import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
-import { pathToFileURL } from 'url';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
+import { pathToFileURL, fileURLToPath } from 'url';
+import { dirname, resolve as resolvePath } from 'path';
+import { homedir } from 'os';
+import { createRequire } from 'module';
 
 const arg = (n, d) => {
   const i = process.argv.indexOf('--' + n);
   return i > -1 ? process.argv[i + 1] : d;
 };
+
+// Everything this harness needs lives outside the repo -- a Chromium, a browser
+// profile signed in to BBO, the unpacked extensions, playwright-core itself --
+// and all four used to be written down as one person's home directory. Each is
+// now a name with a per-user default, so a second Mac needs no edits to this
+// file: HOME resolves the defaults, and a flag or env var overrides any of them.
+const HOME = homedir();
+const PW_CACHE = process.env.PW_CACHE || HOME + '/Library/Caches/ms-playwright';
+
+// --check reports what this machine has and exits, launching neither a browser
+// nor a BBO session. It is the first thing to run on a Mac that has not done
+// this before: none of what it checks is in the repo, so "it works here" says
+// nothing about anywhere else.
+const CHECK = process.argv.includes('--check');
+
+// playwright-core is not a dependency of this repo -- nothing here is npm
+// installed -- so it is found rather than imported by name. The copy npx leaves
+// behind when the Playwright MCP server runs is the one these Macs already
+// have; its directory is a content hash, so it is searched for, not named.
+const require_ = createRequire(import.meta.url);
+function resolvePlaywrightCore() {
+  const explicit = arg('playwright-core', process.env.PW_CORE);
+  if (explicit) {
+    if (!existsSync(explicit)) throw new Error('--playwright-core / PW_CORE does not exist: ' + explicit);
+    return explicit;
+  }
+  try { return require_.resolve('playwright-core'); } catch {}
+  const npx = HOME + '/.npm/_npx';
+  if (existsSync(npx)) {
+    for (const dir of readdirSync(npx)) {
+      for (const entry of ['index.mjs', 'index.js']) {
+        const p = `${npx}/${dir}/node_modules/playwright-core/${entry}`;
+        if (existsSync(p)) return p;
+      }
+    }
+  }
+  throw new Error(
+    'playwright-core not found. Install it (npm i -g playwright-core) or point PW_CORE ' +
+    'at a copy. Running the Playwright MCP server once also leaves one in ~/.npm/_npx.');
+}
+
+let PW_CORE = null, coreError = null;
+try { PW_CORE = resolvePlaywrightCore(); } catch (e) { if (!CHECK) throw e; coreError = e.message; }
+
+// A CJS resolution usually gives named exports through the module lexer, but
+// not always; take either shape.
+let chromium = null;
+if (PW_CORE) {
+  const pwCore = await import(pathToFileURL(PW_CORE).href);
+  chromium = pwCore.chromium || pwCore.default?.chromium;
+  if (!CHECK && !chromium) throw new Error('playwright-core at ' + PW_CORE + ' exports no chromium');
+}
 const OUT = arg('out', '/tmp/pwrun.json');
 const TEST = arg('test');
 const TIMEOUT = parseInt(arg('timeout', '45'), 10) * 1000;
@@ -18,11 +72,33 @@ const TIMEOUT = parseInt(arg('timeout', '45'), 10) * 1000;
 const KEEP_OPEN = process.argv.includes('--keep-open');
 // --profile lets a run use a second, slim profile so it does not contend with
 // a browser already open on the main one.
-const PROFILE = arg('profile', '/Users/rick/.playwright-mcp/bbo-profile');
+const PROFILE = arg('profile', process.env.PBS_BBO_PROFILE || HOME + '/.playwright-mcp/bbo-profile');
 // --expect-build <hash>  fail the run if the page loaded a different revision of
 // runtime/ than the one on disk. Get the hash from: node tools/stamp-runtime.mjs
 const EXPECT_BUILD = arg('expect-build');
-const EXT = '/Users/rick/.playwright-mcp/ext';
+const EXT = arg('ext', process.env.PBS_BBO_EXT || HOME + '/.playwright-mcp/ext');
+// Which Chromium to launch. The bundled playwright-core expects a build that is
+// usually not installed, and pinning one build number broke the harness the
+// moment the MCP server updated (1243 -> 1244). So resolve it at launch:
+//   1. --chromium <path> or $PW_CHROMIUM, when a specific build is wanted
+//   2. the build playwright-core itself expects, if it happens to be installed
+//   3. the newest chromium-NNNN in the Playwright cache
+const CHROME_IN_BUILD = 'chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
+function resolveChromium() {
+  const explicit = arg('chromium', process.env.PW_CHROMIUM);
+  if (explicit) {
+    if (!existsSync(explicit)) throw new Error('--chromium / PW_CHROMIUM does not exist: ' + explicit);
+    return explicit;
+  }
+  try { const own = chromium.executablePath(); if (existsSync(own)) return own; } catch {}
+  const builds = (existsSync(PW_CACHE) ? readdirSync(PW_CACHE) : [])
+    .map(d => /^chromium-(\d+)$/.exec(d)).filter(Boolean)
+    .map(m => ({ n: +m[1], path: PW_CACHE + '/' + m[0] + '/' + CHROME_IN_BUILD }))
+    .filter(b => existsSync(b.path))
+    .sort((a, b) => b.n - a.n);
+  if (!builds.length) throw new Error('no Chromium found in ' + PW_CACHE + ' - run: npx playwright install chromium');
+  return builds[0].path;
+}
 // PBS, BBOalert, Bridge Solver, BBO Extractor
 const ALL = { pbs:      'bfgapanhaiakopfngbjiapbcgdgojoed',
               bboalert: 'bjgihidachainhhhilkeemegdhehnlcf',
@@ -35,7 +111,45 @@ const without = (arg('without') || '').split(',').filter(Boolean);
 let names = only ? only.split(',') : Object.keys(ALL);
 names = names.filter(n => !without.includes(n));
 const IDS = names.map(n => ALL[n]).filter(Boolean);
-const paths = IDS.map(i => EXT + '/' + i).join(',');
+// Where each extension is loaded from. The symlinks under ext/ point into a
+// Chrome profile and cover an extension installed from the Web Store. The PBS
+// extension is also *in this repo*, unpacked and loadable as it stands, which
+// is what a machine testing repo code wants and what a machine that has never
+// run refresh-extensions.sh has anyway -- so fall back to it. A link under
+// ext/ still wins, so a setup that already works keeps loading what it loaded.
+const REPO_ROOT = resolvePath(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const extSource = (name) => {
+  const linked = EXT + '/' + ALL[name];
+  if (existsSync(linked + '/manifest.json')) return { path: linked, from: 'ext' };
+  if (name === 'pbs' && existsSync(REPO_ROOT + '/src/manifest.json')) {
+    return { path: REPO_ROOT + '/src', from: 'repo' };
+  }
+  return null;
+};
+const sources = names.map(n => [n, extSource(n)]);
+const paths = sources.filter(([, src]) => src).map(([, src]) => src.path).join(',');
+
+if (CHECK) {
+  const line = (ok, label, detail) =>
+    console.log(`  ${ok ? 'OK     ' : 'MISSING'}  ${label.padEnd(15)} ${detail}`);
+  let chromiumPath = null, chromiumError = null;
+  try { chromiumPath = resolveChromium(); } catch (e) { chromiumError = e.message; }
+  const profileOk = existsSync(PROFILE) && readdirSync(PROFILE).length > 0;
+  const missingExt = sources.filter(([, src]) => !src).map(([n]) => n);
+  const loadedFrom = sources.filter(([, src]) => src)
+    .map(([n, src]) => `${n}${src.from === 'repo' ? ' (this repo\'s src/)' : ''}`);
+
+  console.log('pwrun.mjs --check: nothing is launched, no BBO session is opened.');
+  line(!!PW_CORE, 'playwright-core', PW_CORE || coreError);
+  line(!!chromiumPath, 'chromium', chromiumPath || chromiumError);
+  line(profileOk, 'BBO profile', PROFILE + (profileOk ? '' : '  (sign in to BBO once in this profile)'));
+  line(missingExt.length === 0, 'extensions',
+       missingExt.length ? `${EXT} lacks: ${missingExt.join(', ')}` : loadedFrom.join(', '));
+
+  const ready = PW_CORE && chromiumPath && profileOk && !missingExt.length;
+  console.log(ready ? '\nReady.' : '\nNot ready. See docs/testing-with-playwright.md.');
+  process.exit(ready ? 0 : 1);
+}
 
 const log = [];
 
@@ -64,13 +178,33 @@ let dialogs = [];
 const say = m => { log.push(`[${new Date().toISOString().slice(11,19)}] ${m}`); };
 const finish = (status, extra = {}) => {
   try { writeFileSync(OUT, JSON.stringify({ status, log, keptOpen: KEEP_OPEN, ...extra }, null, 2)); } catch {}
-  if (KEEP_OPEN) {
+  // --keep-open parks so the browser stays up to be used. There is nothing to
+  // keep open if the run failed -- on a setup error the browser was never
+  // launched -- and parking then leaves a process claiming a window that does
+  // not exist, for the next run to clean up.
+  if (KEEP_OPEN && status === 'ok') {
     console.log('[harness] result written; browser left open. kill ' + process.pid + ' to close it.');
     setInterval(() => {}, 1 << 30);   // park forever, browser stays up
     return;
   }
   process.exit(status === 'ok' ? 0 : 2);
 };
+
+// An extension path that does not exist makes Chrome raise a blocking modal --
+// "Manifest file is missing or unreadable" -- which flashes in the Dock, waits
+// for a click nobody is there to give, and leaves BBO open with none of our
+// code in it. The symlinks under ext/ point into a Chrome profile and go stale
+// whenever an extension updates, so this is a normal condition, not a rarity.
+// Say so before launching, and name the script that fixes it.
+const brokenExt = sources.filter(([, src]) => !src).map(([n]) => n);
+if (brokenExt.length) {
+  say(`extensions missing or stale: ${brokenExt.join(', ')} (looked in ${EXT})`);
+  say('fix: run test/playwright/refresh-extensions.sh, then node pwrun.mjs --check');
+  finish('error', { error:
+    `no manifest for: ${brokenExt.join(', ')} under ${EXT}. ` +
+    'Run test/playwright/refresh-extensions.sh to repoint the symlinks at the ' +
+    'extensions in your Chrome profile, then check with: node pwrun.mjs --check' });
+}
 
 // Watchdog: fires no matter what the page is doing.
 const watchdog = setTimeout(() => {
@@ -82,12 +216,12 @@ watchdog.unref?.();
 let ctx;
 try {
   say('launching with extensions: ' + names.join(', '));
+  const CHROMIUM = resolveChromium();
+  say('chromium: ' + CHROMIUM.replace(PW_CACHE + '/', '').split('/')[0]);
   say('password manager: ' + disablePasswordManager(PROFILE));
   ctx = await chromium.launchPersistentContext(PROFILE, {
     headless: false,
-    // Pinned: the bundled playwright-core expects a chromium build that is
-    // not installed. Use the same one the MCP server drives.
-    executablePath: '/Users/rick/Library/Caches/ms-playwright/chromium-1243/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing',
+    executablePath: CHROMIUM,
     args: [`--disable-extensions-except=${paths}`, `--load-extension=${paths}`,
            '--disable-blink-features=AutomationControlled',
            // belt and braces alongside the profile prefs above
