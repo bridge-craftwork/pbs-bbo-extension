@@ -117,8 +117,11 @@ window.toggleRandomlyRotate = function () {
                     // syncRotateFromDialog reads the checkbox when the dialog
                     // closes and wrote that back as the preference, silently
                     // undoing the toggle a couple of seconds later (issue #40).
-                    if ($("modal-content mat-checkbox:first", parent.window.document).hasClass("mat-checkbox-checked") != window.pbsRotateDeals) {
-                        $("modal-content mat-checkbox:first .mat-checkbox-input", parent.window.document).trigger("click");
+                    // Read the native input: BBO's MDC checkboxes dropped the
+                    // .mat-checkbox-checked / .mat-checkbox-input classes.
+                    var cb = $("modal-content mat-checkbox:first input[type=checkbox]", parent.window.document);
+                    if (cb.prop("checked") != window.pbsRotateDeals) {
+                        cb.trigger("click");
                     }
                     break;
                 case 4:
@@ -145,13 +148,13 @@ window.toggleRandomlyRotate = function () {
 window._pbsModalWasOpen = false;
 window._pbsLastCheckboxState = null;
 window.syncRotateFromDialog = function () {
-    var checkbox = $("modal-content mat-checkbox:first", parent.window.document);
+    var checkbox = $("modal-content mat-checkbox:first input[type=checkbox]", parent.window.document);
     var modalOpen = checkbox.length > 0;
 
     if (modalOpen) {
         // Dialog is open - read the checkbox state
         window._pbsModalWasOpen = true;
-        window._pbsLastCheckboxState = checkbox.hasClass("mat-checkbox-checked");
+        window._pbsLastCheckboxState = checkbox.prop("checked");
     } else if (window._pbsModalWasOpen) {
         // Dialog just closed - sync state from last-read checkbox value
         window._pbsModalWasOpen = false;
