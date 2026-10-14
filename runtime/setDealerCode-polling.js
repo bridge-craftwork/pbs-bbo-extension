@@ -13,6 +13,12 @@ window.setDealerCode = function (dealerCode, dealer = "S", rotateDeals = true) {
     var txtar = null;
     var doc = parent.window.document;
     var dirs = "SWNE";
+    // The dialog's checkboxes, as their native <input>. BBO moved to Angular
+    // Material's MDC components (mat-mdc-checkbox, mdc-checkbox__native-control),
+    // so the old .mat-checkbox-checked / .mat-checkbox-input classes match nothing
+    // and both boxes silently stayed unticked - BBO then ignored the dealer code.
+    // The input's own `checked` works for both markups.
+    var checkboxInput = (which) => $("modal-content mat-checkbox" + which + " input[type=checkbox]", doc);
     var step = 0;
     var t0 = Date.now();
     var stepStart = t0;
@@ -91,8 +97,9 @@ window.setDealerCode = function (dealerCode, dealer = "S", rotateDeals = true) {
         {
             ready: () => true,
             action: () => {
-                if (($("modal-content mat-checkbox:first", doc).hasClass("mat-checkbox-checked")) != window.pbsRotateDeals) {
-                    $("modal-content mat-checkbox:first .mat-checkbox-input", doc).trigger("click");
+                var cb = checkboxInput(":first");
+                if (cb.prop("checked") != window.pbsRotateDeals) {
+                    cb.trigger("click");
                 }
             }
         },
@@ -100,8 +107,9 @@ window.setDealerCode = function (dealerCode, dealer = "S", rotateDeals = true) {
         {
             ready: () => true,
             action: () => {
-                if (!$("modal-content mat-checkbox:last", doc).hasClass("mat-checkbox-checked")) {
-                    $("modal-content mat-checkbox:last .mat-checkbox-input", doc).trigger("click");
+                var cb = checkboxInput(":last");
+                if (!cb.prop("checked")) {
+                    cb.trigger("click");
                 }
             }
         },

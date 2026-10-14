@@ -64,7 +64,7 @@ Each default can be overridden: `--profile`, `--ext`, `--chromium`,
 
 The Practice-Bidding-Scenarios pipeline drives this harness for its `gib` and
 `bbo-demo` operations, and looks for it at
-`~/Development/GitHub/pbs-bbo-extension/test/playwright/pwrun.mjs`. Cloned
+`/Volumes/Express2T/Development/GitHub/pbs-bbo-extension/test/playwright/pwrun.mjs`. Cloned
 elsewhere, point `PBS_PWRUN` at your copy.
 
 ## Running a test
