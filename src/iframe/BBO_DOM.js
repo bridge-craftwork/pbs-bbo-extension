@@ -144,8 +144,24 @@ function setOptions(on) {
 	if (on) {
 		$("#pbs-tab .verticalClass", PWD).css("background-color", "rgb(49, 96, 191)").css("color", "white")
 	} else {
-		$("#pbs-tab .verticalClass", PWD).css("background-color", "white").css("color", "black")
+		$("#pbs-tab .verticalClass", PWD).css("background-color", "white").css("color", inactiveTabColor())
 	}
+}
+
+/**
+ * The text colour BBO gives its own unselected tabs (a grey), so the PBS tab
+ * matches them instead of standing out in black. Read from a sibling tab that is
+ * not the selected one; black only if none can be read.
+ */
+function inactiveTabColor() {
+	var color = 'black';
+	$("#rightDiv .verticalTabBarClass tab-bar-button", PWD).not("#pbs-tab").find(".verticalClass").each(function () {
+		var cs = PWD.defaultView.getComputedStyle(this);
+		if (cs.backgroundColor === 'rgb(49, 96, 191)') return;   // the selected tab
+		color = cs.color;
+		return false;
+	});
+	return color;
 }
 
 /**
@@ -164,7 +180,6 @@ function addBBOalertTab() {
 	t.querySelector('.verticalClass').textContent = 'PBS';
 	t.id = 'pbs-tab';
 	t.onclick = toggleOptions;
-	t.style.color = 'white';
 	t.style.display = "";
 	vt.appendChild(t);
 	t = parent.document.getElementById('pbs-tab');
