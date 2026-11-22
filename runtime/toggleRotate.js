@@ -144,26 +144,47 @@ window.toggleRandomlyRotate = function () {
     }, delayValue);
 };
 
-// Sync toggle button when user manually changes the checkbox in Deal source dialog
+// Sync the preference when the user changes "Randomly rotate" in BBO's own Deal
+// source dialog.
+//
+// This used to write back whatever the checkbox read when ANY dialog closed, and
+// that kept wiping the stored preference: the selector was "modal-content
+// mat-checkbox:first", which matches the first checkbox of every BBO modal, and
+// even the right checkbox starts each session unticked, because BBO does not keep
+// it - only we do. So opening Deal source and closing it untouched (or Review
+// Current Code, which leaves the dialog open on the Advanced tab) saved "off",
+// and the user had to turn rotation back on every session.
+//
+// Now: only the Deal source dialog's Advanced tab counts (it is the one with the
+// dealer-code textarea), and the preference changes only if the checkbox CHANGED
+// while the dialog was open. Our own clicks in setDealerCode/toggleRandomlyRotate
+// set it to the preference, so writing them back is a no-op.
 window._pbsModalWasOpen = false;
+window._pbsFirstCheckboxState = null;
 window._pbsLastCheckboxState = null;
 window.syncRotateFromDialog = function () {
-    var checkbox = $("modal-content mat-checkbox:first input[type=checkbox]", parent.window.document);
-    var modalOpen = checkbox.length > 0;
+    var doc = parent.window.document;
+    var popup = $("bidding-deal-source-popup", doc);
+    var modalOpen = popup.length > 0;
 
     if (modalOpen) {
-        // Dialog is open - read the checkbox state
         window._pbsModalWasOpen = true;
-        window._pbsLastCheckboxState = checkbox.prop("checked");
+        if ($("textarea", popup).length === 0) return;   // not the Advanced tab
+        var checkbox = $("mat-checkbox:first input[type=checkbox]", popup);
+        if (checkbox.length === 0) return;
+        var state = checkbox.prop("checked");
+        if (window._pbsFirstCheckboxState === null) window._pbsFirstCheckboxState = state;
+        window._pbsLastCheckboxState = state;
     } else if (window._pbsModalWasOpen) {
-        // Dialog just closed - sync state from last-read checkbox value
         window._pbsModalWasOpen = false;
-        if (window._pbsLastCheckboxState !== null && window._pbsLastCheckboxState !== window.pbsRotateDeals) {
-            window.pbsRotateDeals = window._pbsLastCheckboxState;
+        var first = window._pbsFirstCheckboxState, last = window._pbsLastCheckboxState;
+        window._pbsFirstCheckboxState = null;
+        window._pbsLastCheckboxState = null;
+        if (first !== null && last !== first && last !== window.pbsRotateDeals) {
+            window.pbsRotateDeals = last;
             window.pbsSetRotatePref(window.pbsRotateDeals);
             window.updateRotateButton();
         }
-        window._pbsLastCheckboxState = null;
     }
 };
 // Restore the remembered preference at load, so the toggle button is already
